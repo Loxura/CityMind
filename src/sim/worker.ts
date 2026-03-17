@@ -9,12 +9,14 @@ self.addEventListener('unhandledrejection', (e) => {
   self.postMessage(msg);
 });
 
-import { SAB_SIZE, STATS_INTERVAL, INITIAL_AGENT_COUNT } from '../types/constants';
+import { SAB_SIZE, STATS_INTERVAL, INITIAL_AGENT_COUNT, AGENT_FIELDS } from '../types/constants';
 import { tick, initAgents, seedRng } from './tick';
 import { createMap } from './map';
 import { computeStats } from './stats';
-import { resetMarket } from './market';
+import { resetMarket, getMarketStats } from './market';
 import { defaultPolicy, applyPolicyPatch } from './policy';
+import { getField } from './agent';
+import EvoWorkerCtor from '../evolution/worker.ts?worker';
 import type { MainToSim, SimToMain } from '../types/messages';
 import type { TileMap } from './map';
 import type { PolicyState } from '../types/sim';
@@ -28,10 +30,47 @@ let tickNumber = 0;
 let running = false;
 let intervalId: ReturnType<typeof setInterval> | null = null;
 
+// Evolution Worker — spawned once and reused across resets
+let evoWorker: Worker | null = null;
+
+function ensureEvoWorker(sharedSab: SharedArrayBuffer): void {
+  if (evoWorker) {
+    evoWorker.terminate();
+  }
+  evoWorker = new EvoWorkerCtor();
+  evoWorker.addEventListener('message', (e: MessageEvent) => {
+    if (e.data.type === 'EVOLVED') {
+      console.log(`[SimWorker] evolution complete — mutationCount=${e.data.mutationCount}`);
+    }
+  });
+  // Share the SAB — Evolution Worker reads/writes weights directly
+  evoWorker.postMessage({ type: 'INIT_SAB', sab: sharedSab });
+}
+
+// Collect fitness scores (wealth) for all active agents into a snapshot Float32Array.
+function collectFitness(n: number): Float32Array {
+  const scores = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    scores[i] = getField(sabView, i, AGENT_FIELDS.WEALTH);
+  }
+  return scores;
+}
+
 function doTick(): void {
   if (!running) return;
-  activeCount = tick(sabView, activeCount, tiles, policy, tickNumber);
+
+  const { foodPrice, woodPrice } = getMarketStats();
+  activeCount = tick(sabView, activeCount, tiles, policy, tickNumber, foodPrice, woodPrice);
   tickNumber++;
+
+  // Send EVOLVE every 100 ticks — sim does NOT wait for the response
+  if (tickNumber % 100 === 0 && evoWorker) {
+    evoWorker.postMessage({
+      type: 'EVOLVE',
+      fitnessScores: collectFitness(activeCount),
+      agentCount: activeCount,
+    });
+  }
 
   if (tickNumber % STATS_INTERVAL === 0) {
     const stats = computeStats(sabView, activeCount, tickNumber);
@@ -55,6 +94,9 @@ function handleInit(agentCount: number, seed: number, initPolicy: PolicyState): 
     activeCount = initAgents(sabView, agentCount, seed);
     tickNumber = 0;
     running = true;
+
+    // Spawn/reset Evolution Worker and share the SAB
+    ensureEvoWorker(sab);
 
     console.log(`[SimWorker] INIT complete: ${activeCount} agents, seed=${seed}, SAB=${SAB_SIZE} bytes`);
     const ready: SimToMain = { type: 'READY', sab };

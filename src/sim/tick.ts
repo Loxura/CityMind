@@ -1,14 +1,16 @@
-// Master tick loop — Phase 2.
-// Order: grid register → harvest → market → lifecycle → tile regen → compact.
-// Neural net inference is Phase 3; do not add it here.
+// Master tick loop — Phase 3.
+// Order: net inference → harvest (net-driven move) → grid register → market → lifecycle → tile regen → compact.
 
 import { AGENT_FIELDS, AGENT_STRIDE, MAX_AGENTS, INITIAL_ENERGY, MAP_WIDTH, MAP_HEIGHT } from '../types/constants';
 import { getField, initAgent } from './agent';
-import { harvestAgent } from './harvest';
+import { applyNetHarvest } from './harvest';
 import { isDead, ageAgent, updateWealth, tryReproduce } from './lifecycle';
 import { regenerateTiles } from './map';
 import { runMarket } from './market';
 import { SpatialGrid } from './grid';
+import { buildInputMatrix, computeWealthRanks } from '../net/inputs';
+import { runInference, decodeMoveDir, decodePrimaryAction, decodePrice } from '../net/inference';
+import { copyWeightsFromSAB, initWeights } from '../net/weights';
 import type { TileMap } from './map';
 import type { PolicyState } from '../types/sim';
 
@@ -48,6 +50,7 @@ export function initAgents(sab: Float32Array, count: number, seed: number): numb
     const x = Math.floor(rng() * MAP_WIDTH);
     const y = Math.floor(rng() * MAP_HEIGHT);
     initAgent(sab, i, _nextId++, x, y, 20, 5, INITIAL_ENERGY);
+    initWeights(sab, i, rng);
   }
   return count;
 }
@@ -68,6 +71,8 @@ export function tick(
   tiles: TileMap,
   policy: PolicyState,
   tickNumber: number,
+  foodPrice: number,
+  woodPrice: number,
 ): number {
   // Build shuffled order — shared by market and harvest steps
   const order: number[] = [];
@@ -80,33 +85,52 @@ export function tick(
 
   let childCount = 0;
 
-  // Step 2 — Harvest: agents move, collect resources, consume energy/food.
-  // Must run before market so agents enter trading with post-harvest inventories.
+  // ── Net inference (once per tick, all agents in one batch) ──────────────────
+  // Build inputs using last tick's grid state (pre-harvest positions from prev tick).
+  const wealthRanks = computeWealthRanks(sab, activeCount);
+  const inputMatrix = buildInputMatrix(sab, activeCount, tiles, foodPrice, woodPrice, policy, wealthRanks, _grid);
+  const { w1flat, w2flat, w3flat } = copyWeightsFromSAB(sab, activeCount);
+  const rawOutputs = runInference(inputMatrix, w1flat, w2flat, w3flat, activeCount);
+
+  // Decode net outputs into per-agent action arrays
+  const moveDir          = new Uint8Array(activeCount);
+  const primaryAction    = new Uint8Array(activeCount);
+  const offerPrices      = new Float32Array(activeCount);
+  const acceptThresholds = new Float32Array(activeCount);
+
+  const outStride = 7;
+  for (let i = 0; i < activeCount; i++) {
+    const base = i * outStride;
+    moveDir[i]          = decodeMoveDir(rawOutputs[base + 0]);
+    primaryAction[i]    = decodePrimaryAction(rawOutputs[base + 1]);
+    offerPrices[i]      = decodePrice(rawOutputs[base + 2]);
+    acceptThresholds[i] = decodePrice(rawOutputs[base + 3]);
+    // dims 4-6 (reservation wage, invest, risk) stored for Phase 4+; not used yet
+  }
+
+  // ── Harvest: net-driven move + resource collection + death check ────────────
   for (const idx of order) {
     ageAgent(sab, idx);
-    harvestAgent(sab, idx, tiles);
+    applyNetHarvest(sab, idx, tiles, moveDir[idx]);
 
     if (isDead(sab, idx)) {
       alive[idx] = 0;
       continue;
     }
 
-    // Wealth = food + wood + cash (cash is 0 until Phase 7).
-    // Updated here so non-trading agents have wealth reflecting current inventory,
-    // keeping Gini meaningful. Market trades add on top of this baseline.
     updateWealth(sab, idx);
   }
 
-  // Step 1 (grid) runs after harvest so positions are post-move.
+  // Grid register (post-harvest positions, dead excluded)
   _grid.clear();
   for (let i = 0; i < activeCount; i++) {
     if (alive[i]) _grid.register(i, getField(sab, i, AGENT_FIELDS.X), getField(sab, i, AGENT_FIELDS.Y));
   }
 
-  // Step 3 — Market: trades in shuffled order using post-harvest inventories.
-  runMarket(sab, activeCount, _grid, policy, order, rng);
+  // ── Market: trades using net-derived prices ─────────────────────────────────
+  runMarket(sab, activeCount, _grid, policy, order, rng, offerPrices, acceptThresholds);
 
-  // Step 4 — Lifecycle: reproduction (death already marked above).
+  // ── Lifecycle: reproduction (death already marked above) ────────────────────
   for (const idx of order) {
     if (!alive[idx]) continue;
 
@@ -116,6 +140,8 @@ export function tick(
       const childSlot = tryReproduce(sab, idx, totalNow, MAX_AGENTS, nextIdRef, rng);
       if (childSlot !== -1) {
         _nextId = nextIdRef.value;
+        // Give child Xavier-initialised weights
+        initWeights(sab, childSlot, rng);
         childCount++;
       }
     }

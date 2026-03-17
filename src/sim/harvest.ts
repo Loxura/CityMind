@@ -1,5 +1,5 @@
-// Phase 1 — hand-coded harvest rules.
-// No neural nets, no Cobb-Douglas yet (Phase 3/4).
+// Harvest rules — Phase 1 hand-coded + Phase 3 net-driven move.
+// applyNetHarvest replaces harvestAgent in the Phase 3 tick loop.
 
 import { AGENT_FIELDS, MAP_WIDTH, MAP_HEIGHT } from '../types/constants';
 import { getField, setField } from './agent';
@@ -51,8 +51,39 @@ function stepToward(
   };
 }
 
-// Apply Phase 1 hand-coded rules to a single agent.
-// Returns true if the agent harvested (for caller bookkeeping).
+// Move direction constants for Phase 3 net output.
+// dim 0 of net output decodes to: 0=stay, 1=N(y-1), 2=S(y+1), 3=E(x+1), 4=W(x-1)
+const MOVE_DX = [0,  0,  0,  1, -1];
+const MOVE_DY = [0, -1,  1,  0,  0];
+
+// Apply Phase 3 net-driven move then harvest from the destination tile.
+// moveDir: 0-4 as decoded from net output dim 0.
+export function applyNetHarvest(
+  sab: Float32Array,
+  idx: number,
+  tiles: TileMap,
+  moveDir: number,
+): void {
+  const x = Math.max(0, Math.min(MAP_WIDTH  - 1, Math.round(getField(sab, idx, AGENT_FIELDS.X))));
+  const y = Math.max(0, Math.min(MAP_HEIGHT - 1, Math.round(getField(sab, idx, AGENT_FIELDS.Y))));
+
+  const nx = Math.max(0, Math.min(MAP_WIDTH  - 1, x + MOVE_DX[moveDir]));
+  const ny = Math.max(0, Math.min(MAP_HEIGHT - 1, y + MOVE_DY[moveDir]));
+  setField(sab, idx, AGENT_FIELDS.X, nx);
+  setField(sab, idx, AGENT_FIELDS.Y, ny);
+
+  // Harvest from destination tile
+  const tile = tileAt(tiles, nx, ny);
+  const harvested = tile.food * 0.3;
+  tile.food = Math.max(0, tile.food - harvested);
+  setField(sab, idx, AGENT_FIELDS.FOOD, getField(sab, idx, AGENT_FIELDS.FOOD) + harvested);
+
+  // Consume energy / food (same as hand-coded Phase 1)
+  setField(sab, idx, AGENT_FIELDS.ENERGY, Math.max(0, getField(sab, idx, AGENT_FIELDS.ENERGY) - 1));
+  setField(sab, idx, AGENT_FIELDS.FOOD,   Math.max(0, getField(sab, idx, AGENT_FIELDS.FOOD)   - 0.5));
+}
+
+// Apply Phase 1 hand-coded rules to a single agent (kept for reference; not used in Phase 3+).
 export function harvestAgent(
   sab: Float32Array,
   idx: number,

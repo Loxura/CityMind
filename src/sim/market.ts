@@ -59,6 +59,9 @@ export function resetMarket(): void {
 
 // Called once per tick from tick.ts, AFTER the spatial grid has been populated
 // with current agent positions.
+//
+// Phase 3+: optionally pass per-agent price arrays from neural net output.
+// When provided, agent uses its own net-derived prices instead of random offsets.
 export function runMarket(
   sab: Float32Array,
   _n: number,
@@ -66,6 +69,8 @@ export function runMarket(
   policy: PolicyState,
   shuffledOrder: number[],
   rng: () => number,
+  netOfferPrices?: Float32Array,
+  netAcceptThresholds?: Float32Array,
 ): void {
   tickTradeCount = 0;  // reset at the start of every tick; tradeCount keeps accumulating
 
@@ -91,8 +96,13 @@ export function runMarket(
 
     const bIdx = candidates[Math.floor(rng() * candidates.length)];
 
-    const offerPrice     = lastFoodPrice * (0.8 + rng() * 0.4);   // [0.8×, 1.2×]
-    const acceptThreshold = lastFoodPrice * (0.7 + rng() * 0.6);  // [0.7×, 1.3×]
+    // Use net-derived prices when available; fall back to random perturbation (Phase 1/2)
+    const offerPrice = netOfferPrices
+      ? netOfferPrices[aIdx]
+      : lastFoodPrice * (0.8 + rng() * 0.4);
+    const acceptThreshold = netAcceptThresholds
+      ? netAcceptThresholds[aIdx]
+      : lastFoodPrice * (0.7 + rng() * 0.6);
 
     if (offerPrice < acceptThreshold) continue;
 
