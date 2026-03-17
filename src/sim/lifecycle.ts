@@ -6,7 +6,7 @@ import { getField, setField, initAgent } from './agent';
 // Returns true if the agent should be removed from the active set.
 export function isDead(sab: Float32Array, idx: number): boolean {
   const energy = getField(sab, idx, AGENT_FIELDS.ENERGY);
-  const food   = getField(sab, idx, AGENT_FIELDS.FOOD);
+  const food = getField(sab, idx, AGENT_FIELDS.FOOD);
   return energy <= 0 && food <= 0;
 }
 
@@ -16,11 +16,14 @@ export function ageAgent(sab: Float32Array, idx: number): void {
   setField(sab, idx, AGENT_FIELDS.AGE, age + 1);
 }
 
-// Update the WEALTH field (Phase 1: food + wood proxy).
+// Update the WEALTH field: food + wood + cash (cash = 0 before Phase 7).
+// Called after harvest each tick so non-trading agents have meaningful wealth for Gini.
+// Market trades add on top of this via direct setField in market.ts.
 export function updateWealth(sab: Float32Array, idx: number): void {
   const food = getField(sab, idx, AGENT_FIELDS.FOOD);
   const wood = getField(sab, idx, AGENT_FIELDS.WOOD);
-  setField(sab, idx, AGENT_FIELDS.WEALTH, food + wood);
+  const cash = getField(sab, idx, AGENT_FIELDS.CASH);  // 0 before Phase 7
+  setField(sab, idx, AGENT_FIELDS.WEALTH, food + wood + cash);
 }
 
 // Attempt reproduction; returns the new agent index (slotIdx) if spawned,
@@ -34,10 +37,10 @@ export function tryReproduce(
   rand: () => number,
 ): number {
   const food = getField(sab, idx, AGENT_FIELDS.FOOD);
-  const age  = getField(sab, idx, AGENT_FIELDS.AGE);
+  const age = getField(sab, idx, AGENT_FIELDS.AGE);
 
-  if (food <= 30 || age <= 10) return -1;
-  if (activeCount >= maxAgents)  return -1;
+  if (food <= 60 || age <= 10 || age % 20 !== 0) return -1;
+  if (activeCount >= maxAgents) return -1;
 
   const x = getField(sab, idx, AGENT_FIELDS.X);
   const y = getField(sab, idx, AGENT_FIELDS.Y);
@@ -47,11 +50,11 @@ export function tryReproduce(
   setField(sab, idx, AGENT_FIELDS.FOOD, half);
 
   // Child placed in adjacent tile (random offset, clamped)
-  const cx = Math.max(0, Math.min(MAP_WIDTH  - 1, Math.round(x + (rand() * 2 - 1))));
+  const cx = Math.max(0, Math.min(MAP_WIDTH - 1, Math.round(x + (rand() * 2 - 1))));
   const cy = Math.max(0, Math.min(MAP_HEIGHT - 1, Math.round(y + (rand() * 2 - 1))));
 
   const childSlot = activeCount; // placed at the end of the active list
-  initAgent(sab, childSlot, nextId.value++, cx, cy, half, 0, INITIAL_ENERGY);
+  initAgent(sab, childSlot, nextId.value++, cx, cy, half, 3, INITIAL_ENERGY);
 
   return childSlot;
 }

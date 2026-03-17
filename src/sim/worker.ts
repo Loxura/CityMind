@@ -1,10 +1,19 @@
 // Sim Worker entry point.
 // Runs entirely off the main thread. Never imports React or DOM APIs.
 
+console.log('[SimWorker] module loaded');
+
+// Surface any unhandled promise rejections as ERROR messages
+self.addEventListener('unhandledrejection', (e) => {
+  const msg = { type: 'ERROR', message: `Unhandled rejection: ${e.reason}` };
+  self.postMessage(msg);
+});
+
 import { SAB_SIZE, STATS_INTERVAL, INITIAL_AGENT_COUNT } from '../types/constants';
 import { tick, initAgents, seedRng } from './tick';
 import { createMap } from './map';
 import { computeStats } from './stats';
+import { resetMarket } from './market';
 import { defaultPolicy, applyPolicyPatch } from './policy';
 import type { MainToSim, SimToMain } from '../types/messages';
 import type { TileMap } from './map';
@@ -15,8 +24,8 @@ let sabView: Float32Array;
 let tiles: TileMap;
 let policy: PolicyState = defaultPolicy();
 let activeCount = 0;
-let tickNumber  = 0;
-let running     = false;
+let tickNumber = 0;
+let running = false;
 let intervalId: ReturnType<typeof setInterval> | null = null;
 
 function doTick(): void {
@@ -26,23 +35,26 @@ function doTick(): void {
 
   if (tickNumber % STATS_INTERVAL === 0) {
     const stats = computeStats(sabView, activeCount, tickNumber);
-    console.log(`[SimWorker] tick=${stats.tick} pop=${stats.population} avgFood=${stats.avgFood.toFixed(2)} avgWood=${stats.avgWood.toFixed(2)}`);
+    console.log(`[SimWorker] tick=${stats.tick} pop=${stats.population} avgFood=${stats.avgFood.toFixed(2)} avgWood=${stats.avgWood.toFixed(2)} gini=${stats.gini.toFixed(3)} foodPrice=${stats.foodPrice.toFixed(3)} trades=${stats.tradeCount} tickTrades=${stats.tickTradeCount}`);
     const msg: SimToMain = { type: 'STATS', stats };
     self.postMessage(msg);
   }
 }
 
 function handleInit(agentCount: number, seed: number, initPolicy: PolicyState): void {
+  console.log(`[SimWorker] handleInit called — agentCount=${agentCount} seed=${seed}`);
   try {
-    sab     = new SharedArrayBuffer(SAB_SIZE);
+    console.log(`[SimWorker] allocating SAB: ${SAB_SIZE} bytes`);
+    sab = new SharedArrayBuffer(SAB_SIZE);
     sabView = new Float32Array(sab);
-    tiles   = createMap(seed);
-    policy  = initPolicy;
+    tiles = createMap(seed);
+    policy = initPolicy;
 
+    resetMarket();
     seedRng(seed);
     activeCount = initAgents(sabView, agentCount, seed);
-    tickNumber  = 0;
-    running     = true;
+    tickNumber = 0;
+    running = true;
 
     console.log(`[SimWorker] INIT complete: ${activeCount} agents, seed=${seed}, SAB=${SAB_SIZE} bytes`);
     const ready: SimToMain = { type: 'READY', sab };

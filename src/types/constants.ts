@@ -43,6 +43,10 @@ export const INITIAL_FOOD        = 20;
 export const INITIAL_WOOD        = 5;
 export const INITIAL_ENERGY      = 100;
 
+// Trade survival buffers — agents only trade surplus above these floors
+export const FOOD_SURVIVAL_BUFFER = 10;
+export const WOOD_SURVIVAL_BUFFER = 2;  // temporarily lowered from 5 to confirm trades execute
+
 // Tick loop
 export const STATS_INTERVAL = 60; // emit SimStats every N ticks
 export const TARGET_TPS      = 60; // ticks per second target

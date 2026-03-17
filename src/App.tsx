@@ -69,10 +69,15 @@ export default function App() {
         {stats ? (
           <table style={{ borderCollapse: 'collapse', width: '100%' }}>
             <tbody>
-              <Row label="Tick" value={stats.tick} />
+              <Row label="Tick"       value={stats.tick} />
               <Row label="Population" value={stats.population} />
-              <Row label="Avg Food" value={stats.avgFood.toFixed(2)} />
-              <Row label="Avg Wood" value={stats.avgWood.toFixed(2)} />
+              <Row label="Avg Food"   value={stats.avgFood.toFixed(2)} />
+              <Row label="Avg Wood"   value={stats.avgWood.toFixed(2)} />
+              <Row label="Gini"        value={stats.gini.toFixed(4)} />
+              <Row label="Food Price"  value={stats.foodPrice.toFixed(3)} />
+              <Row label="Wood Price"  value={stats.woodPrice.toFixed(3)} />
+              <Row label="Trades (total)"    value={stats.tradeCount} />
+              <Row label="Trades (this tick)" value={stats.tickTradeCount} />
             </tbody>
           </table>
         ) : (

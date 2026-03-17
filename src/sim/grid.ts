@@ -26,13 +26,14 @@ export class SpatialGrid {
     cell.push(agentIdx);
   }
 
-  // Returns agent indices in the same cell and all 8 adjacent cells
+  // Returns agent indices within a 2-ring radius (5×5 cell window = up to 25 cells).
+  // With cellSize=5 this covers a 25×25 tile area — enough to find wood-zone partners.
   getNeighbours(x: number, y: number): number[] {
     const cx = Math.floor(x / this.cellSize);
     const cy = Math.floor(y / this.cellSize);
     const result: number[] = [];
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
         const key = (cx + dx) + (cy + dy) * this.cols;
         const cell = this.cells.get(key);
         if (cell) {

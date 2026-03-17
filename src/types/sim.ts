@@ -24,6 +24,8 @@ export interface SimStats {
   techsUnlocked:    TechId[];
   stockIndex:       number;
   bankSolvency:     number;
+  tradeCount:       number;  // cumulative completed trades since last INIT/RESET
+  tickTradeCount:   number;  // trades executed in the most recent tick only
 }
 
 export interface PolicyState {
