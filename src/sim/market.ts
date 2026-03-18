@@ -1,6 +1,7 @@
-// Phase 2/3 — Bilateral goods trade engine with independent price discovery.
+// Phase 2/3/7 — Bilateral goods trade engine with independent price discovery.
 // Two separate trade flows and two separate ring buffers.
 // woodPrice is NEVER derived from foodPrice — they are independent.
+// Phase 7: money prices bootstrapped from barter equilibrium; emergency food market.
 
 import { AGENT_FIELDS, FOOD_SURVIVAL_BUFFER, WOOD_SURVIVAL_BUFFER } from '../types/constants';
 import { getField, setField } from './agent';
@@ -28,6 +29,15 @@ export let treasury   = 0;
 let tradeCount     = 0;
 let tickTradeCount = 0;
 
+// ── Phase 7: money prices ────────────────────────────────────────────────────
+// Bootstrapped once from barter equilibrium when isCurrencyActive first turns true.
+// foodMoneyPrice: cash cost per 1 food unit.
+// woodMoneyPrice: cash cost per 1 wood unit.
+// currencyBootstrapped: prevents re-grant if POLICY message fires multiple times.
+let foodMoneyPrice      = 0;
+let woodMoneyPrice      = 0;
+let currencyBootstrapped = false;
+
 function ringMean(buf: Float32Array, count: number, seed: number): number {
   if (count === 0) return seed;
   let sum = 0;
@@ -51,10 +61,10 @@ function pushWoodPrice(price: number): void {
 }
 
 export function getMarketStats(): {
-  foodPrice: number; woodPrice: number; treasury: number;
-  tradeCount: number; tickTradeCount: number;
+  foodPrice: number; woodPrice: number; foodMoneyPrice: number;
+  treasury: number; tradeCount: number; tickTradeCount: number;
 } {
-  return { foodPrice: lastFoodPrice, woodPrice: lastWoodPrice, treasury, tradeCount, tickTradeCount };
+  return { foodPrice: lastFoodPrice, woodPrice: lastWoodPrice, foodMoneyPrice, treasury, tradeCount, tickTradeCount };
 }
 
 // Must be called on every INIT and RESET before the first tick.
@@ -79,9 +89,83 @@ export function resetMarket(): void {
   woodRingCount = 0;
   lastWoodPrice = PRICE_SEED;
 
-  treasury       = 0;
-  tradeCount     = 0;
-  tickTradeCount = 0;
+  treasury            = 0;
+  tradeCount          = 0;
+  tickTradeCount      = 0;
+  foodMoneyPrice      = 0;
+  woodMoneyPrice      = 0;
+  currencyBootstrapped = false;
+}
+
+// ── Phase 7: currency bootstrap ──────────────────────────────────────────────
+// Called once when policy.isCurrencyActive transitions false→true.
+// Reads barter ring buffer averages as money prices and grants each agent
+// initial cash proportional to their food holdings.
+// Idempotent: currencyBootstrapped flag prevents re-grant.
+export function activateCurrency(sab: Float32Array, n: number): void {
+  if (currencyBootstrapped) return;
+  foodMoneyPrice      = lastFoodPrice;   // barter wood/food ratio → money price per food
+  woodMoneyPrice      = lastWoodPrice;   // barter food/wood ratio → money price per wood
+  currencyBootstrapped = true;
+
+  // Cash grant: agents receive cash = food × foodMoneyPrice
+  // This gives every agent immediate purchasing power equal to their food stock value.
+  for (let i = 0; i < n; i++) {
+    const food = getField(sab, i, AGENT_FIELDS.FOOD);
+    setField(sab, i, AGENT_FIELDS.CASH, food * foodMoneyPrice);
+  }
+  console.log(`[Phase7] activateCurrency: foodMoneyPrice=${foodMoneyPrice.toFixed(3)} woodMoneyPrice=${woodMoneyPrice.toFixed(3)} n=${n}`);
+}
+
+// ── Phase 7: emergency food market ──────────────────────────────────────────
+// Runs at tick step 3.5 (after grid register, before labour market).
+// Agents with food < FOOD_SURVIVAL_BUFFER and sufficient cash buy 1 food unit
+// from a surplus neighbour.
+// Tax model (approved): buyer pays flat foodMoneyPrice (tax-exempt on buyer side).
+//   Seller receives foodMoneyPrice × (1 - taxRate).
+//   Treasury receives foodMoneyPrice × taxRate.
+export function runEmergencyMarket(
+  sab: Float32Array,
+  _n: number,
+  grid: SpatialGrid,
+  policy: PolicyState,
+  shuffledOrder: number[],
+  rng: () => number,
+): void {
+  if (foodMoneyPrice <= 0) return; // currency not yet bootstrapped
+
+  for (const aIdx of shuffledOrder) {
+    const foodA = getField(sab, aIdx, AGENT_FIELDS.FOOD);
+    if (foodA >= FOOD_SURVIVAL_BUFFER) continue; // not in need
+
+    const cashA = getField(sab, aIdx, AGENT_FIELDS.CASH);
+    if (cashA < foodMoneyPrice) continue; // can't afford
+
+    // Find a neighbour with surplus food
+    const xA = getField(sab, aIdx, AGENT_FIELDS.X);
+    const yA = getField(sab, aIdx, AGENT_FIELDS.Y);
+    const neighbours = grid.getNeighbours(xA, yA);
+
+    const sellers: number[] = [];
+    for (const bIdx of neighbours) {
+      if (bIdx !== aIdx && getField(sab, bIdx, AGENT_FIELDS.FOOD) > FOOD_SURVIVAL_BUFFER + 1) {
+        sellers.push(bIdx);
+      }
+    }
+    if (sellers.length === 0) continue;
+
+    const bIdx = sellers[Math.floor(rng() * sellers.length)];
+
+    // Execute: buyer gets 1 food; seller gets after-tax cash; treasury gets tax
+    const taxAmt = foodMoneyPrice * policy.taxRate;
+    setField(sab, aIdx, AGENT_FIELDS.FOOD, foodA + 1);
+    setField(sab, aIdx, AGENT_FIELDS.CASH, cashA - foodMoneyPrice);
+    setField(sab, bIdx, AGENT_FIELDS.FOOD, getField(sab, bIdx, AGENT_FIELDS.FOOD) - 1);
+    setField(sab, bIdx, AGENT_FIELDS.CASH, getField(sab, bIdx, AGENT_FIELDS.CASH) + foodMoneyPrice - taxAmt);
+    treasury += taxAmt;
+    tradeCount++;
+    tickTradeCount++;
+  }
 }
 
 // Called once per tick from tick.ts.

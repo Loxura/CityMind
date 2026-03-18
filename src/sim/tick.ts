@@ -5,10 +5,10 @@
 import { AGENT_FIELDS, AGENT_STRIDE, MAX_AGENTS, INITIAL_ENERGY, MAP_WIDTH, MAP_HEIGHT } from '../types/constants';
 import { getField, setField, initAgent } from './agent';
 import type { AgentSeed } from './seeds/moroccoUrbanSeed';
-import { applyNetHarvest, resetHarvestTick } from './harvest';
+import { applyNetHarvest, applyFoodDecay, resetHarvestTick } from './harvest';
 import { isDead, ageAgent, updateWealth, tryReproduce } from './lifecycle';
 import { regenerateTiles } from './map';
-import { runMarket, getMarketStats, addToTreasury, setTreasury } from './market';
+import { runMarket, runEmergencyMarket, getMarketStats, addToTreasury, setTreasury } from './market';
 import { runLabourMarket } from './labour';
 import { redistribute } from './tax';
 import { SpatialGrid } from './grid';
@@ -124,6 +124,11 @@ export function tick(
     ageAgent(sab, idx);
     applyNetHarvest(sab, idx, tiles, moveDir[idx]);
 
+    // Phase 7: progressive food decay (see harvest.ts applyFoodDecay for tier thresholds).
+    if (policy.isCurrencyActive) {
+      applyFoodDecay(sab, idx);
+    }
+
     if (isDead(sab, idx)) {
       alive[idx] = 0;
       continue;
@@ -136,6 +141,11 @@ export function tick(
   _grid.clear();
   for (let i = 0; i < activeCount; i++) {
     if (alive[i]) _grid.register(i, getField(sab, i, AGENT_FIELDS.X), getField(sab, i, AGENT_FIELDS.Y));
+  }
+
+  // ── Emergency food market (Step 3.5 — Phase 7+) ─────────────────────────────
+  if (policy.isCurrencyActive) {
+    runEmergencyMarket(sab, activeCount, _grid, policy, order, rng);
   }
 
   // ── Labour market (Step 4) ───────────────────────────────────────────────────

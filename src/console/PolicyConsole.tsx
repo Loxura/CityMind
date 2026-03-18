@@ -8,6 +8,7 @@ import { RedistributionSelect } from './controls/RedistributionSelect';
 import { UbiAmountSlider } from './controls/UbiAmountSlider';
 import { MinWageSlider } from './controls/MinWageSlider';
 import { LandPolicySelect } from './controls/LandPolicySelect';
+import { CentralBankControls } from './controls/CentralBankControls';
 import { defaultPolicy } from '../sim/policy';
 import type { PolicyState, RedistributionModel, SeedMode } from '../types/sim';
 import type { MainToSim } from '../types/messages';
@@ -15,11 +16,13 @@ import type { PolicyEvent } from '../types/events';
 
 // Fixed colours per policy field — used for chart event markers.
 const EVENT_COLORS: Partial<Record<keyof PolicyState, string>> = {
-  taxRate:        '#7c5cfc',
-  redistribution: '#3cc8a0',
-  ubiAmount:      '#3cc8a0',
-  minWage:        '#f0a040',
-  landPolicy:     '#e05555',
+  taxRate:          '#7c5cfc',
+  redistribution:   '#3cc8a0',
+  ubiAmount:        '#3cc8a0',
+  minWage:          '#f0a040',
+  landPolicy:       '#e05555',
+  isCurrencyActive: '#3cc8a0',
+  centralBankRate:  '#3cc8a0',
 };
 
 function pct(v: unknown): string {
@@ -49,6 +52,10 @@ function makeLabel(key: keyof PolicyState, oldPolicy: PolicyState, newVal: unkno
       return `MinWage ${(newVal as number).toFixed(1)}`;
     case 'landPolicy':
       return `Land: ${newVal}`;
+    case 'isCurrencyActive':
+      return newVal ? 'Currency ON' : 'Currency OFF';
+    case 'centralBankRate':
+      return `Rate ${((newVal as number) * 100).toFixed(1)}%`;
     default:
       return String(key);
   }
@@ -137,9 +144,16 @@ export function PolicyConsole({ worker, currentTick, seedMode, onSeedChange, onE
         </div>
       </section>
 
-      <section style={{ ...sectionStyle, opacity: 0.4 }}>
-        <div style={sectionTitleStyle}>Monetary — Phase 7+</div>
-        <div style={noteStyle}>Central bank controls unlock in Phase 7.</div>
+      <section style={sectionStyle}>
+        <div style={sectionTitleStyle}>Monetary</div>
+        <CentralBankControls
+          isCurrencyActive={policy.isCurrencyActive}
+          centralBankRate={policy.centralBankRate}
+          moneySupplyGrowth={policy.moneySupplyGrowth}
+          onToggleCurrency={v => update({ isCurrencyActive: v })}
+          onRateChange={v => update({ centralBankRate: v })}
+          onSupplyChange={v => update({ moneySupplyGrowth: v })}
+        />
       </section>
     </div>
   );

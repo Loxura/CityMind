@@ -13,8 +13,8 @@ import { SAB_SIZE, STATS_INTERVAL, INITIAL_AGENT_COUNT, AGENT_FIELDS } from '../
 import { MOROCCO_URBAN_SEED } from './seeds/moroccoUrbanSeed';
 import { tick, initAgents, seedRng } from './tick';
 import { createMap } from './map';
-import { computeStats } from './stats';
-import { resetMarket, getMarketStats } from './market';
+import { computeStats, resetStats } from './stats';
+import { resetMarket, activateCurrency, getMarketStats } from './market';
 import { defaultPolicy, applyPolicyPatch } from './policy';
 import { getField } from './agent';
 import EvoWorkerCtor from '../evolution/worker.ts?worker';
@@ -35,6 +35,9 @@ let activeCount = 0;
 let tickNumber = 0;
 let running = false;
 let intervalId: ReturnType<typeof setInterval> | null = null;
+
+// Phase 7: currency activation tracking
+let prevCurrencyActive = false;
 
 // Evolution Worker — spawned once and reused across resets
 let evoWorker: Worker | null = null;
@@ -64,6 +67,13 @@ function collectFitness(n: number): Float32Array {
 
 function doTick(): void {
   if (!running) return;
+
+  // Phase 7: detect currency activation (false → true transition)
+  if (policy.isCurrencyActive && !prevCurrencyActive) {
+    activateCurrency(sabView, activeCount);
+    console.log(`[Phase7] Currency activated at tick=${tickNumber} pop=${activeCount}`);
+  }
+  prevCurrencyActive = policy.isCurrencyActive;
 
   const { foodPrice, woodPrice } = getMarketStats();
   activeCount = tick(sabView, activeCount, tiles, policy, tickNumber, foodPrice, woodPrice);
@@ -116,6 +126,8 @@ function handleInit(agentCount: number, seed: number, initPolicy: PolicyState, s
     policy = initPolicy;
 
     resetMarket();
+    resetStats();
+    prevCurrencyActive = false;
     seedRng(seed);
     const agentSeeds = seedMode === 'flat' ? undefined : MOROCCO_URBAN_SEED;
     activeCount = initAgents(sabView, agentCount, seed, policy.landPolicy === 'free', agentSeeds);

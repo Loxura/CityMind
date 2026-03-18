@@ -59,6 +59,13 @@ export const INITIAL_ENERGY      = 100;
 export const FOOD_SURVIVAL_BUFFER = 10;
 export const WOOD_SURVIVAL_BUFFER = 2;  // temporarily lowered from 5 to confirm trades execute
 
+// Phase 7 — progressive food decay rates (applied per tick when currency is active)
+// food > 100 : HIGH tier — ~0.8% loss/tick, stockpile erosion for wealthy agents
+// food 20–100: MID  tier — ~0.2% loss/tick, gentle pressure on comfortable agents
+// food ≤ 20  : no decay  — subsistence agents fully protected
+export const FOOD_DECAY_RATE_HIGH = 0.992;
+export const FOOD_DECAY_RATE_MID  = 0.998;
+
 // Tick loop
 export const STATS_INTERVAL = 60; // emit SimStats every N ticks
 export const TARGET_TPS      = 60; // ticks per second target

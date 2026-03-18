@@ -9,6 +9,7 @@ export function defaultPolicy(): PolicyState {
     ubiAmount:           0,
     minWage:             0,
     landPolicy:          'free',
+    isCurrencyActive:    false,
     centralBankRate:     0,
     moneySupplyGrowth:   0,
     reserveRequirement:  0,

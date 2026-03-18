@@ -11,8 +11,9 @@ export interface SimStats {
   // Phase 2+ fields — stub zero in Phase 1
   gdp:              number;
   gini:             number;
-  wealthBrackets:   number[];   // agent count per decile bin
-  wealthByBracket:  number[];   // total wealth held per decile bin (Piketty view)
+  wealthBrackets:   number[];   // agent count per percentile bin (always ~n/10 each)
+  wealthByBracket:  number[];   // total wealth held per percentile bin (Piketty view)
+  wealthBoundaries: number[];   // 9 wealth values at P10, P20, …, P90 (bin thresholds)
   foodPrice:        number;
   woodPrice:        number;
   wageRate:         number;
@@ -21,6 +22,7 @@ export interface SimStats {
   landRentIndex:    number;
   avgIncome:        number;
   inflationRate:    number;
+  avgCash:          number;        // Phase 7+; 0 before
   creditToGdp:      number;
   roleCounts:       Record<AgentRole, number>;
   techsUnlocked:    TechId[];
@@ -36,6 +38,7 @@ export interface PolicyState {
   ubiAmount:          number;
   minWage:            number;
   landPolicy:         'state' | 'auctioned' | 'free';
+  isCurrencyActive:   boolean;  // Phase 7+; false before
   centralBankRate:    number;   // Phase 7+
   moneySupplyGrowth:  number;   // Phase 7+
   reserveRequirement: number;   // Phase 8+

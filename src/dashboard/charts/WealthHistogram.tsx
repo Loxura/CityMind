@@ -10,7 +10,7 @@ interface Props {
   stats: SimStats;
 }
 
-const W = 220, H = 90, ML = 28, MR = 8, MT = 8, MB = 20;
+const W = 220, H = 100, ML = 28, MR = 8, MT = 8, MB = 30;
 const BARS = 10;
 
 type View = 'agents' | 'wealth';
@@ -49,8 +49,21 @@ export function WealthHistogram({ stats }: Props) {
         <text x={ML - 4} y={MT + 4} textAnchor="end" fill="#555" fontSize={9}>
           {view === 'agents' ? maxVal : abbreviate(maxVal)}
         </text>
-        <text x={ML} y={H - 4} textAnchor="middle" fill="#555" fontSize={8}>poor</text>
-        <text x={ML + iW} y={H - 4} textAnchor="middle" fill="#555" fontSize={8}>rich</text>
+        {/* Percentile boundary labels: P10…P90 and the wealth value at each threshold */}
+        {(stats.wealthBoundaries ?? []).map((boundaryVal, i) => {
+          const x = ML + (i + 1) * barW;
+          return (
+            <g key={i}>
+              <line x1={x} y1={MT + iH} x2={x} y2={MT + iH + 3} stroke="#333" />
+              <text x={x} y={MT + iH + 10} textAnchor="middle" fill="#444" fontSize={7}>
+                P{(i + 1) * 10}
+              </text>
+              <text x={x} y={MT + iH + 20} textAnchor="middle" fill="#333" fontSize={6}>
+                {abbreviate(boundaryVal)}
+              </text>
+            </g>
+          );
+        })}
 
         {data.map((val, i) => {
           const barH = (val / maxVal) * iH;

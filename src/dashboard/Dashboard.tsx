@@ -19,6 +19,7 @@ import { RentIncomeChart } from './charts/RentIncomeChart';
 import { CreditGdpChart } from './charts/CreditGdpChart';
 import { TechAdoptionChart } from './charts/TechAdoptionChart';
 import { StockIndexChart } from './charts/StockIndexChart';
+import { InflationChart } from './charts/InflationChart';
 import { ScenarioComparison } from './ScenarioComparison';
 import type { SimStats } from '../types/sim';
 import type { PolicyEvent } from '../types/events';
@@ -76,6 +77,7 @@ export function Dashboard({ stats, history, events, savedRunCount }: Props) {
       >
         {hasHistory && (
           <>
+            <InflationChart    history={history} events={events} />
             <RentIncomeChart   history={history} events={events} />
             <CreditGdpChart    history={history} events={events} />
             <TechAdoptionChart history={history} events={events} />

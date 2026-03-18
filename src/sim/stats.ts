@@ -5,6 +5,14 @@ import { getLabourStats } from './labour';
 import { getHarvestStats } from './harvest';
 import type { SimStats } from '../types/sim';
 
+// Phase 7: rolling inflation tracker — compares current foodMoneyPrice to previous sample.
+// resetStats() must be called on INIT/RESET.
+let _prevFoodMoneyPrice = 0;
+
+export function resetStats(): void {
+  _prevFoodMoneyPrice = 0;
+}
+
 // Copy this function exactly — do not reimplement.
 export function computeGini(wealths: Float32Array, n: number): number {
   const sorted = Array.from(wealths.subarray(0, n)).sort((a, b) => a - b);
@@ -13,43 +21,41 @@ export function computeGini(wealths: Float32Array, n: number): number {
   return sorted.reduce((s, w, i) => s + (2 * i - n + 1) * w, 0) / (n * n * mean);
 }
 
-// Compute 10-decile wealth bracket counts from a sorted wealth array.
+// Percentile bin helpers.
+// Bins are constructed by rank, not by value range.
+// Agent at sorted index i → bucket = floor(i / n * 10), clamped to [0, 9].
+// This guarantees exactly floor(n/10) or ceil(n/10) agents per bin regardless
+// of how skewed the wealth distribution is.
+
+function percentileBucket(i: number, n: number): number {
+  return Math.min(9, Math.floor((i / n) * 10));
+}
+
+// Agent count per percentile bin — always ~n/10 per bin by construction.
 function computeWealthBrackets(sorted: number[]): number[] {
   const n = sorted.length;
   const brackets = new Array<number>(10).fill(0);
-  if (n === 0) return brackets;
-  const min = sorted[0];
-  const max = sorted[n - 1];
-  const range = max - min;
-  if (range === 0) {
-    brackets[0] = n;
-    return brackets;
-  }
-  for (const w of sorted) {
-    const bucket = Math.min(9, Math.floor(((w - min) / range) * 10));
-    brackets[bucket]++;
-  }
+  for (let i = 0; i < n; i++) brackets[percentileBucket(i, n)]++;
   return brackets;
 }
 
-// Compute total wealth held per decile bin from a sorted wealth array.
-// Same bin boundaries as computeWealthBrackets — sums wealth instead of counting agents.
+// Total wealth held per percentile bin (Piketty view).
+// Same bin assignments as computeWealthBrackets.
 function computeWealthByBracket(sorted: number[]): number[] {
   const n = sorted.length;
   const brackets = new Array<number>(10).fill(0);
-  if (n === 0) return brackets;
-  const min = sorted[0];
-  const max = sorted[n - 1];
-  const range = max - min;
-  if (range === 0) {
-    brackets[0] = sorted.reduce((s, w) => s + w, 0);
-    return brackets;
-  }
-  for (const w of sorted) {
-    const bucket = Math.min(9, Math.floor(((w - min) / range) * 10));
-    brackets[bucket] += w;
-  }
+  for (let i = 0; i < n; i++) brackets[percentileBucket(i, n)] += sorted[i];
   return brackets;
+}
+
+// The 9 wealth values at P10, P20, …, P90 — boundaries between adjacent bins.
+// Passed through SimStats so the chart can label each bin threshold.
+function computeWealthBoundaries(sorted: number[]): number[] {
+  const n = sorted.length;
+  if (n < 2) return new Array(9).fill(0);
+  return [1, 2, 3, 4, 5, 6, 7, 8, 9].map(
+    p => sorted[Math.min(n - 1, Math.floor(p * n / 10))],
+  );
 }
 
 export function computeStats(
@@ -59,6 +65,7 @@ export function computeStats(
 ): SimStats {
   let totalFood = 0;
   let totalWood = 0;
+  let totalCash = 0;
 
   // Collect wealth values into a reusable Float32Array for Gini
   const wealths = new Float32Array(n);
@@ -66,20 +73,30 @@ export function computeStats(
   for (let i = 0; i < n; i++) {
     totalFood   += getField(sab, i, AGENT_FIELDS.FOOD);
     totalWood   += getField(sab, i, AGENT_FIELDS.WOOD);
+    totalCash   += getField(sab, i, AGENT_FIELDS.CASH);
     wealths[i]   = getField(sab, i, AGENT_FIELDS.WEALTH);
   }
 
   const avgFood = n > 0 ? totalFood / n : 0;
   const avgWood = n > 0 ? totalWood / n : 0;
+  const avgCash = n > 0 ? totalCash / n : 0;
   const gini    = n > 1 ? computeGini(wealths, n) : 0;
 
   // wealthBrackets needs sorted order (computeGini already sorts internally,
   // but we sort separately here to avoid coupling)
-  const sortedWealths   = Array.from(wealths).sort((a, b) => a - b);
-  const wealthBrackets  = computeWealthBrackets(sortedWealths);
-  const wealthByBracket = computeWealthByBracket(sortedWealths);
+  const sortedWealths    = Array.from(wealths).sort((a, b) => a - b);
+  const wealthBrackets   = computeWealthBrackets(sortedWealths);
+  const wealthByBracket  = computeWealthByBracket(sortedWealths);
+  const wealthBoundaries = computeWealthBoundaries(sortedWealths);
 
-  const { foodPrice, woodPrice, tradeCount, tickTradeCount } = getMarketStats();
+  const { foodPrice, woodPrice, foodMoneyPrice, tradeCount, tickTradeCount } = getMarketStats();
+
+  // Phase 7: inflation = tick-over-tick change in foodMoneyPrice (per stats interval)
+  let inflationRate = 0;
+  if (foodMoneyPrice > 0 && _prevFoodMoneyPrice > 0) {
+    inflationRate = (foodMoneyPrice - _prevFoodMoneyPrice) / _prevFoodMoneyPrice;
+  }
+  _prevFoodMoneyPrice = foodMoneyPrice;
   const { wageRate, unemploymentRate, totalWages } = getLabourStats();
   const { foodHarvested } = getHarvestStats();
 
@@ -105,6 +122,7 @@ export function computeStats(
     gini,
     wealthBrackets,
     wealthByBracket,
+    wealthBoundaries,
     foodPrice,
     woodPrice,
     gdp,
@@ -113,7 +131,8 @@ export function computeStats(
     labourShareOfGdp,
     landRentIndex:    0,
     avgIncome,
-    inflationRate:    0,
+    inflationRate,
+    avgCash,
     creditToGdp:      0,
     roleCounts,
     techsUnlocked: [],

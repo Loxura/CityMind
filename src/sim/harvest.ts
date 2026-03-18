@@ -1,7 +1,7 @@
 // Harvest rules — Phase 1 hand-coded + Phase 3 net-driven move.
 // applyNetHarvest replaces harvestAgent in the Phase 3 tick loop.
 
-import { AGENT_FIELDS, MAP_WIDTH, MAP_HEIGHT, INITIAL_ENERGY } from '../types/constants';
+import { AGENT_FIELDS, MAP_WIDTH, MAP_HEIGHT, INITIAL_ENERGY, FOOD_DECAY_RATE_HIGH, FOOD_DECAY_RATE_MID } from '../types/constants';
 
 // Per-tick harvest totals for GDP computation in stats.ts.
 let _tickFoodHarvested = 0;
@@ -98,6 +98,22 @@ export function applyNetHarvest(
   const currentEnergy = getField(sab, idx, AGENT_FIELDS.ENERGY);
   setField(sab, idx, AGENT_FIELDS.ENERGY,
     Math.min(INITIAL_ENERGY, currentEnergy - 1 + foodConsumed * 1.5));
+}
+
+// ── Phase 7: progressive food decay ─────────────────────────────────────────
+// Called from tick.ts harvest loop when policy.isCurrencyActive is true.
+// Tiered by current food level so subsistence agents are never penalised.
+export function applyFoodDecay(sab: Float32Array, idx: number): void {
+  const food = getField(sab, idx, AGENT_FIELDS.FOOD);
+  let decayed = food;
+
+  if (food > 100) {
+    decayed = food * FOOD_DECAY_RATE_HIGH;
+  } else if (food > 20) {
+    decayed = food * FOOD_DECAY_RATE_MID;
+  }
+
+  setField(sab, idx, AGENT_FIELDS.FOOD, decayed);
 }
 
 // Apply Phase 1 hand-coded rules to a single agent (kept for reference; not used in Phase 3+).
