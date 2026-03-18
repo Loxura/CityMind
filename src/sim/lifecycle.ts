@@ -1,6 +1,6 @@
 // Phase 1 — aging, death, and basic reproduction.
 
-import { AGENT_FIELDS, INITIAL_ENERGY, MAP_WIDTH, MAP_HEIGHT } from '../types/constants';
+import { AGENT_FIELDS, INITIAL_ENERGY, MAP_WIDTH, MAP_HEIGHT, MAX_STABLE_POPULATION } from '../types/constants';
 import { getField, setField, initAgent } from './agent';
 
 // Returns true if the agent should be removed from the active set.
@@ -36,6 +36,10 @@ export function tryReproduce(
   nextId: { value: number },
   rand: () => number,
 ): number {
+  // Hard cap at inference-safe population limit (separate from SAB allocation limit).
+  // Prevents GPU VRAM exhaustion: weight tensors grow linearly with n.
+  if (activeCount >= MAX_STABLE_POPULATION) return -1;
+
   const food = getField(sab, idx, AGENT_FIELDS.FOOD);
   const age = getField(sab, idx, AGENT_FIELDS.AGE);
 

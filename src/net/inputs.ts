@@ -106,9 +106,9 @@ export function buildInputMatrix(
     // dim 33: nearby agent count
     out[base + 33] = clamp01(grid.getNeighbours(x, y).length / 30);
 
-    // dim 34-35: market prices
-    out[base + 34] = clamp01(foodPrice / 100);
-    out[base + 35] = clamp01(woodPrice / 100);
+    // dim 34-35: market prices — independent, normalised by /20
+    out[base + 34] = clamp01(foodPrice / 20);
+    out[base + 35] = clamp01(woodPrice / 20);
 
     // dims 36-39: Phase 4/7/9+ features — zero until those phases activate
     out[base + 36] = 0;                                  // land rent index

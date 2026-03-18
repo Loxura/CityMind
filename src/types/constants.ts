@@ -30,8 +30,20 @@ export const AGENT_FIELDS = {
 export const WEIGHT_COUNT = 824;
 export const AGENT_STRIDE = 20 + WEIGHT_COUNT; // 844 floats per agent
 
+// MAX_AGENTS: SAB allocation ceiling — hard physical limit of the SharedArrayBuffer.
+// Raising this increases RAM usage linearly (~844 floats × 4 bytes = ~3.4 KB per slot).
+// Never exceeded; reproduction and compaction both check against it.
 export const MAX_AGENTS = 100_000;
 export const SAB_SIZE = MAX_AGENTS * AGENT_STRIDE * 4; // bytes (~322 MB)
+
+// MAX_STABLE_POPULATION: inference-safe operating limit for Phases 3–6.
+// At 500 agents the per-tick weight tensors (W1=[500,40,16]=12.8MB, W2=[500,16,8]=2.56MB,
+// W3=[500,8,7]=1.12MB) total ~16.5 MB GPU per tick — well within WebGL budget.
+// At 4,000+ agents these tensors exceed 130 MB/tick and saturate VRAM at 60 fps.
+// Do NOT raise above 500 until Phase 7 performance pass (WebGPU compute shaders).
+// This is separate from MAX_AGENTS: the SAB can hold 100k agents; the GPU can only
+// batch-infer 500 safely on WebGL.
+export const MAX_STABLE_POPULATION = 500;
 
 // Map constants
 export const MAP_WIDTH  = 50;

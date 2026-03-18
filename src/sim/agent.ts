@@ -24,6 +24,7 @@ export function initAgent(
   food: number,
   wood: number,
   energy: number,
+  land = 0,
 ): void {
   setField(sab, agentIdx, AGENT_FIELDS.ID,               id);
   setField(sab, agentIdx, AGENT_FIELDS.ROLE,             0);
@@ -38,7 +39,7 @@ export function initAgent(
   setField(sab, agentIdx, AGENT_FIELDS.LABOUR_SOLD,      0);
   setField(sab, agentIdx, AGENT_FIELDS.LABOUR_HIRED,     0);
   setField(sab, agentIdx, AGENT_FIELDS.WAGE_RESERVATION, 0);
-  setField(sab, agentIdx, AGENT_FIELDS.LAND,             0);
+  setField(sab, agentIdx, AGENT_FIELDS.LAND,             land);
   setField(sab, agentIdx, AGENT_FIELDS.CASH,             0);
   setField(sab, agentIdx, AGENT_FIELDS.DEBT,             0);
   setField(sab, agentIdx, AGENT_FIELDS.SHARES,           0);

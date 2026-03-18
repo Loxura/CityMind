@@ -1,7 +1,14 @@
 // Harvest rules — Phase 1 hand-coded + Phase 3 net-driven move.
 // applyNetHarvest replaces harvestAgent in the Phase 3 tick loop.
 
-import { AGENT_FIELDS, MAP_WIDTH, MAP_HEIGHT } from '../types/constants';
+import { AGENT_FIELDS, MAP_WIDTH, MAP_HEIGHT, INITIAL_ENERGY } from '../types/constants';
+
+// Per-tick harvest totals for GDP computation in stats.ts.
+let _tickFoodHarvested = 0;
+export function resetHarvestTick(): void { _tickFoodHarvested = 0; }
+export function getHarvestStats(): { foodHarvested: number } {
+  return { foodHarvested: _tickFoodHarvested };
+}
 import { getField, setField } from './agent';
 import type { TileMap } from './map';
 import { tileAt } from './map';
@@ -72,15 +79,25 @@ export function applyNetHarvest(
   setField(sab, idx, AGENT_FIELDS.X, nx);
   setField(sab, idx, AGENT_FIELDS.Y, ny);
 
-  // Harvest from destination tile
-  const tile = tileAt(tiles, nx, ny);
-  const harvested = tile.food * 0.3;
-  tile.food = Math.max(0, tile.food - harvested);
+  // Harvest from destination tile — Cobb-Douglas: Output = A * (1+L)^α * Land^γ * rawYield
+  const tile       = tileAt(tiles, nx, ny);
+  const rawHarvest = tile.food * 0.3;
+  const land        = Math.max(1, getField(sab, idx, AGENT_FIELDS.LAND));
+  const labour      = getField(sab, idx, AGENT_FIELDS.LABOUR_HIRED);
+  const cobbDouglas = 1.0 * Math.pow(1 + labour, 0.6) * Math.pow(land, 0.4);
+  const harvested   = rawHarvest * cobbDouglas;
+  tile.food = Math.max(0, tile.food - rawHarvest); // tile depleted by raw amount
   setField(sab, idx, AGENT_FIELDS.FOOD, getField(sab, idx, AGENT_FIELDS.FOOD) + harvested);
+  _tickFoodHarvested += harvested;
 
-  // Consume energy / food (same as hand-coded Phase 1)
-  setField(sab, idx, AGENT_FIELDS.ENERGY, Math.max(0, getField(sab, idx, AGENT_FIELDS.ENERGY) - 1));
-  setField(sab, idx, AGENT_FIELDS.FOOD,   Math.max(0, getField(sab, idx, AGENT_FIELDS.FOOD)   - 0.5));
+  // Consume food; restore energy proportional to food eaten.
+  // Well-fed (food > 0.5): net energy +0.25/tick. Starving (food = 0): net energy -1/tick.
+  const currentFood   = getField(sab, idx, AGENT_FIELDS.FOOD);
+  const foodConsumed  = Math.min(0.5, currentFood);
+  setField(sab, idx, AGENT_FIELDS.FOOD, currentFood - foodConsumed);
+  const currentEnergy = getField(sab, idx, AGENT_FIELDS.ENERGY);
+  setField(sab, idx, AGENT_FIELDS.ENERGY,
+    Math.min(INITIAL_ENERGY, currentEnergy - 1 + foodConsumed * 1.5));
 }
 
 // Apply Phase 1 hand-coded rules to a single agent (kept for reference; not used in Phase 3+).

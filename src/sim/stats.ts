@@ -1,6 +1,8 @@
 import { AGENT_FIELDS } from '../types/constants';
 import { getField } from './agent';
 import { getMarketStats } from './market';
+import { getLabourStats } from './labour';
+import { getHarvestStats } from './harvest';
 import type { SimStats } from '../types/sim';
 
 // Copy this function exactly — do not reimplement.
@@ -57,6 +59,22 @@ export function computeStats(
   const wealthBrackets = computeWealthBrackets(sortedWealths);
 
   const { foodPrice, woodPrice, tradeCount, tickTradeCount } = getMarketStats();
+  const { wageRate, unemploymentRate, totalWages } = getLabourStats();
+  const { foodHarvested } = getHarvestStats();
+
+  // GDP = value of food harvested this tick * foodPrice
+  const gdp = foodHarvested * foodPrice;
+  const labourShareOfGdp = gdp > 0 ? totalWages / gdp : 0;
+  const avgIncome = n > 0 ? totalWages / n : 0;
+
+  // Role counts: ROLE field 0=farmer,1=builder,2=merchant,3=banker,4=capitalist,5=worker
+  const roleCounts = { farmer: 0, builder: 0, merchant: 0, banker: 0, capitalist: 0, worker: 0 };
+  const roleNames = ['farmer', 'builder', 'merchant', 'banker', 'capitalist', 'worker'] as const;
+  for (let i = 0; i < n; i++) {
+    const role = Math.round(getField(sab, i, AGENT_FIELDS.ROLE));
+    const key = roleNames[Math.min(role, 5)];
+    roleCounts[key]++;
+  }
 
   return {
     tick,
@@ -67,23 +85,15 @@ export function computeStats(
     wealthBrackets,
     foodPrice,
     woodPrice,
-    // Phase 3+ fields — stub zeros
-    gdp:              0,
-    wageRate:         0,
-    unemploymentRate: 0,
-    labourShareOfGdp: 0,
+    gdp,
+    wageRate,
+    unemploymentRate,
+    labourShareOfGdp,
     landRentIndex:    0,
-    avgIncome:        0,
+    avgIncome,
     inflationRate:    0,
     creditToGdp:      0,
-    roleCounts: {
-      farmer:     n,
-      builder:    0,
-      merchant:   0,
-      banker:     0,
-      capitalist: 0,
-      worker:     0,
-    },
+    roleCounts,
     techsUnlocked: [],
     stockIndex:    0,
     bankSolvency:  1,

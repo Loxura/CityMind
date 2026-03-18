@@ -17,6 +17,11 @@ import { resetMarket, getMarketStats } from './market';
 import { defaultPolicy, applyPolicyPatch } from './policy';
 import { getField } from './agent';
 import EvoWorkerCtor from '../evolution/worker.ts?worker';
+import * as tf from '@tensorflow/tfjs';
+import { runInference } from '../net/inference';
+import { buildInputMatrix, computeWealthRanks } from '../net/inputs';
+import { copyWeightsFromSAB } from '../net/weights';
+import { SpatialGrid } from './grid';
 import type { MainToSim, SimToMain } from '../types/messages';
 import type { TileMap } from './map';
 import type { PolicyState } from '../types/sim';
@@ -63,6 +68,14 @@ function doTick(): void {
   activeCount = tick(sabView, activeCount, tiles, policy, tickNumber, foodPrice, woodPrice);
   tickNumber++;
 
+  // Flush TF.js WebGL texture pool every 10 ticks.
+  // At variable population the pool accumulates stale shape keys from n-varying weight tensors
+  // ([n,40,16], [n,16,8], [n,8,7]). An empty scope forces the texture manager to GC dead entries.
+  if (tickNumber % 10 === 0) {
+    tf.engine().startScope();
+    tf.engine().endScope();
+  }
+
   // Send EVOLVE every 100 ticks — sim does NOT wait for the response
   if (tickNumber % 100 === 0 && evoWorker) {
     evoWorker.postMessage({
@@ -78,6 +91,18 @@ function doTick(): void {
     const msg: SimToMain = { type: 'STATS', stats };
     self.postMessage(msg);
   }
+
+  // GPU memory monitor — must be flat after tick 100 if disposal is working.
+  // If numBytes climbs steadily, the tensor leak is still active.
+  if (tickNumber % 300 === 0) {
+    const mem = tf.memory();
+    console.log(
+      `[SimWorker] tf.memory tick=${tickNumber}` +
+      ` tensors=${mem.numTensors}` +
+      ` buffers=${mem.numDataBuffers}` +
+      ` bytes=${(mem.numBytes / 1024 / 1024).toFixed(2)}MB`,
+    );
+  }
 }
 
 function handleInit(agentCount: number, seed: number, initPolicy: PolicyState): void {
@@ -91,9 +116,19 @@ function handleInit(agentCount: number, seed: number, initPolicy: PolicyState): 
 
     resetMarket();
     seedRng(seed);
-    activeCount = initAgents(sabView, agentCount, seed);
+    activeCount = initAgents(sabView, agentCount, seed, policy.landPolicy === 'free');
     tickNumber = 0;
     running = true;
+
+    // Warm up TF.js WebGL shader compilation before the tick loop starts.
+    // Without this, the first N ticks are slow as shaders JIT-compile on first use.
+    console.log('[SimWorker] warming up TF.js shaders...');
+    const _warmGrid = new SpatialGrid();
+    const _ranks    = computeWealthRanks(sabView, activeCount);
+    const _inputs   = buildInputMatrix(sabView, activeCount, tiles, 1, 1, policy, _ranks, _warmGrid);
+    const { w1flat: _w1, w2flat: _w2, w3flat: _w3 } = copyWeightsFromSAB(sabView, activeCount);
+    runInference(_inputs, _w1, _w2, _w3, activeCount);
+    console.log(`[SimWorker] TF.js backend: ${tf.getBackend()}`);
 
     // Spawn/reset Evolution Worker and share the SAB
     ensureEvoWorker(sab);
