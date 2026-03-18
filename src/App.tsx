@@ -90,7 +90,7 @@ export default function App() {
 
       {/* Left column */}
       <div style={leftColStyle}>
-        <h1 style={titleStyle}>CITYMIND — Phase 8</h1>
+        <h1 style={titleStyle}>CITYMIND — Phase 9</h1>
 
         <PolicyConsole
           worker={worker}
@@ -99,6 +99,11 @@ export default function App() {
           onSeedChange={setSeedMode}
           onEvent={handleEvent}
           onPolicyChange={handlePolicyChange}
+          bankDisplay={stats ? {
+            isSolvent:        stats.bankSolvency >= currentPolicy.reserveRequirement,
+            loansOutstanding: stats.bankLoansOutstanding,
+            capitalBuffer:    stats.bankCapitalBuffer,
+          } : null}
         />
 
         <ScenarioManager
@@ -156,6 +161,14 @@ export default function App() {
                 <Row label="Avg Cash"      value={stats.avgCash.toFixed(2)} />
                 <Row label="Rent Index"    value={stats.landRentIndex.toFixed(3)} />
                 <Row label="Inflation"     value={(stats.inflationRate * 100).toFixed(2) + '%'} />
+                <Row label="Credit/GDP"    value={stats.creditToGdp.toFixed(3)} />
+                <Row label="Bank solvency" value={stats.bankSolvency.toFixed(3)} />
+                <Row label="Loans out"     value={stats.bankLoansOutstanding.toFixed(1)} />
+                <Row label="Bank capital"  value={stats.bankCapitalBuffer.toFixed(1)} />
+                <Row label="Avg income"    value={stats.avgIncome.toFixed(2)} />
+                <Row label="Roles" value={
+                  `F:${stats.roleCounts.farmer} Bl:${stats.roleCounts.builder} M:${stats.roleCounts.merchant} Bk:${stats.roleCounts.banker} C:${stats.roleCounts.capitalist} W:${stats.roleCounts.worker}`
+                } />
                 <Row label="Trades (tick)" value={stats.tickTradeCount} />
                 <Row label="Trades (all)"  value={stats.tradeCount} />
               </tbody>

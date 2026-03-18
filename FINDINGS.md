@@ -758,6 +758,69 @@ Known issues carried forward to Phase 9:
 
 ---
 
+### Phase 9 — March 2026 — Commercial banks and credit cycles
+
+**Core addition:** One aggregate bank (BankState in policy.ts) with deposits, lending,
+debt service, default cascade, and reserve-requirement solvency gate.
+
+**Files created:**
+- `src/sim/bank.ts` — `runLending()`, `getBankStats()`. Two-pass per tick: debt service
+  then new lending. Default cascade: houses → food → wood collateral seizure.
+- `src/console/controls/BankingControls.tsx` — Reserve requirement slider (0–30%) +
+  bank status display (Solvent/Insolvent, loansOutstanding, capitalBuffer).
+
+**Files modified:**
+- `src/sim/policy.ts` — `BankState` interface + singleton state + `getBankState()` +
+  `resetBankState()`. capitalBuffer initialised at 500.
+- `src/net/inference.ts` — `decodeInvestSignal(logit)`: sigmoid of output[5]. Now live.
+- `src/sim/tick.ts` — Decodes `investSignals[]` from output[5] in the net decode loop.
+  Calls `runLending(sab, n, order, policy, investSignals, fp, wp)` at step 8.5
+  (after redistribution, before lifecycle). Tick order comment updated to Phase 9.
+- `src/sim/stats.ts` — Imports `getBankStats(gdp)` from bank.ts. Populates live
+  `creditToGdp`, `bankSolvency`, `bankLoansOutstanding`, `bankCapitalBuffer` in SimStats.
+- `src/sim/worker.ts` — Calls `resetBankState()` in `handleInit` (covers INIT + RESET).
+- `src/types/sim.ts` — Added `bankLoansOutstanding` and `bankCapitalBuffer` to SimStats.
+- `src/console/PolicyConsole.tsx` — Banking section added. BankingControls wired.
+  `reserveRequirement` added to EVENT_COLORS (`#c060e0`) and makeLabel (`Reserve X%`).
+- `src/App.tsx` — Passes `bankDisplay` to PolicyConsole derived from SimStats.
+  "Credit/GDP" and "Bank solvency" rows added to stats table. Title → Phase 9.
+
+**Key decisions:**
+
+*Default cascade accounting:* capitalBuffer gets two separate ledger entries:
+`+housesVal` (collateral seized) and `-outstandingDebt` (loan written off).
+Net = `housesVal - outstandingDebt`. Variable `uncovered` (distinct from `outstandingDebt`)
+is used only to determine how much food and wood to seize from the agent. No double-count.
+
+*Debt service rate:* `payment = max(min(DEBT × (centralBankRate + 0.02), DEBT), 0.001)`.
+Floor of 0.001 ensures debt always eventually clears. At rate=0, a 50-unit loan
+repays ~1 cash/tick; cleared in ~50 ticks at the floor.
+
+*Solvency gate:* `isSolvent = loansOutstanding === 0 || capitalBuffer/loansOutstanding >= reserveRequirement`.
+Checked after every loan issuance and every default. Bank freezes new lending
+when insolvent; recapitalises passively as existing loans are repaid.
+
+*Base rate transmission now live:* Higher `centralBankRate` → higher debt service
+→ more defaults → lower `creditToGdp`. Lower rate → cheaper borrowing → more
+`invest_signal > 0.7` triggers fire → credit expansion. This closes the loop for
+neural net input[37] which was wired but had no effect in Phases 7–8.
+
+*invest_signal threshold 0.7:* At sigmoid output >0.7, the raw logit exceeds ~0.85.
+Untrained nets produce near-random outputs; expect ~15% of agents to trigger
+credit-seeking initially. Evolution will select toward agents that borrow when
+wealthy (positive expected value) and abstain when over-leveraged.
+
+**Known issues carried forward to Phase 10:**
+- Money supply growth mechanic still deferred (aggregate bank exists; fractional
+  reserve → money creation not yet wired)
+- SHARES field and stockIndex remain 0
+- capitalGainsTax and marginLendingLimit remain ignored
+- Bank deposits field accumulates but is not yet used in any computation
+
+**TypeScript build:** clean (tsc --noEmit, 0 errors).
+
+---
+
 ### Phase 8 — March 2026 — Scenario comparison metrics upgrade
 
 **Scope:** ScenarioComparison.tsx fully rewritten to surface Phase 7/8 data that

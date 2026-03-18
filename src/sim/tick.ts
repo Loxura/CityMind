@@ -1,8 +1,8 @@
-// Master tick loop — Phase 8.
+// Master tick loop — Phase 9.
 // Order: net inference → harvest (Cobb-Douglas + wood harvest) → construction (builders) →
-//        house decay → food decay → shelter drain → grid register →
-//        emergency food market → labour market → goods market →
-//        housing rent → redistribution → lifecycle → compact → tile regen.
+//        house decay → food decay → grid register → emergency food market →
+//        labour market → goods market → housing rent → shelter drain →
+//        redistribution → lending (Phase 9) → lifecycle → compact → tile regen.
 
 import {
   AGENT_FIELDS, AGENT_STRIDE, MAX_AGENTS, INITIAL_ENERGY,
@@ -22,7 +22,8 @@ import {
 } from './housing';
 import { SpatialGrid } from './grid';
 import { buildInputMatrix, computeWealthRanks } from '../net/inputs';
-import { runInference, decodeMoveDir, decodePrimaryAction, decodePrice, decodeReservationWage } from '../net/inference';
+import { runInference, decodeMoveDir, decodePrimaryAction, decodePrice, decodeReservationWage, decodeInvestSignal } from '../net/inference';
+import { runLending } from './bank';
 import { copyWeightsFromSAB, initWeights } from '../net/weights';
 import type { TileMap } from './map';
 import type { PolicyState } from '../types/sim';
@@ -151,6 +152,7 @@ export function tick(
   const offerPrices      = new Float32Array(activeCount);
   const acceptThresholds = new Float32Array(activeCount);
   const reservationWages = new Float32Array(activeCount);
+  const investSignals    = new Float32Array(activeCount);
 
   for (let i = 0; i < activeCount; i++) {
     const b = i * 7;
@@ -159,7 +161,8 @@ export function tick(
     offerPrices[i]      = decodePrice(rawOutputs[b + 2]);
     acceptThresholds[i] = decodePrice(rawOutputs[b + 3]);
     reservationWages[i] = decodeReservationWage(rawOutputs[b + 4]);
-    // dims 5-6 (invest, risk) reserved for Phase 8 commercial banks / Phase 9
+    investSignals[i]    = decodeInvestSignal(rawOutputs[b + 5]);
+    // dim 6 (risk appetite) reserved for Phase 10
   }
 
   // ── Harvest loop ─────────────────────────────────────────────────────────────
@@ -232,12 +235,15 @@ export function tick(
     applyShelterDrain(sab, idx, sheltered);
   }
 
-  // ── Redistribution (Step 7) ──────────────────────────────────────────────────
+  // ── Redistribution (Step 8) ──────────────────────────────────────────────────
   const { treasury, foodPrice: fp, woodPrice: wp } = getMarketStats();
   const remaining = redistribute(treasury, policy, sab, activeCount, tiles, fp, wp);
   setTreasury(remaining);
 
-  // ── Lifecycle: reproduction only (Step 8) ────────────────────────────────────
+  // ── Lending (Step 8.5 — Phase 9+) ────────────────────────────────────────────
+  runLending(sab, activeCount, order, policy, investSignals, fp, wp);
+
+  // ── Lifecycle: reproduction only (Step 9) ────────────────────────────────────
   for (const idx of order) {
     if (!alive[idx]) continue;
 

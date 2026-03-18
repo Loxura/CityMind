@@ -24,11 +24,13 @@ export interface SimStats {
   avgIncome:        number;
   inflationRate:    number;
   avgCash:          number;        // Phase 7+; 0 before
-  creditToGdp:      number;
-  roleCounts:       Record<AgentRole, number>;
-  techsUnlocked:    TechId[];
-  stockIndex:       number;
-  bankSolvency:     number;
+  creditToGdp:          number;
+  bankSolvency:         number;        // capitalBuffer / max(loansOutstanding, 1), capped at 1.0
+  bankLoansOutstanding: number;        // Phase 9+; 0 before
+  bankCapitalBuffer:    number;        // Phase 9+; 500 at init
+  roleCounts:           Record<AgentRole, number>;
+  techsUnlocked:        TechId[];
+  stockIndex:           number;
   tradeCount:       number;  // cumulative completed trades since last INIT/RESET
   tickTradeCount:   number;  // trades executed in the most recent tick only
 }

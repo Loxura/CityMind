@@ -64,6 +64,7 @@ export function Dashboard({ stats, history, events, savedRunCount }: Props) {
             <EmploymentChart  history={history} events={events} />
             <TradeVolumeChart history={history} events={events} />
             <AvgResourceChart history={history} events={events} />
+            <CreditGdpChart   history={history} events={events} />
             <PolicyImpactScatter history={history} />
           </>
         )}
@@ -79,7 +80,6 @@ export function Dashboard({ stats, history, events, savedRunCount }: Props) {
           <>
             <InflationChart    history={history} events={events} />
             <RentIncomeChart   history={history} events={events} />
-            <CreditGdpChart    history={history} events={events} />
             <TechAdoptionChart history={history} events={events} />
             <StockIndexChart   history={history} events={events} />
           </>

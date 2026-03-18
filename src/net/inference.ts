@@ -96,3 +96,8 @@ export function decodePrice(logit: number): number {
 export function decodeReservationWage(logit: number): number {
   return (1 / (1 + Math.exp(-logit))) * 30;
 }
+
+// Decode dim 5 (invest signal): sigmoid → 0-1. >0.7 triggers credit-seeking (Phase 9+).
+export function decodeInvestSignal(logit: number): number {
+  return 1 / (1 + Math.exp(-logit));
+}

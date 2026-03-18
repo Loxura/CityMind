@@ -1,4 +1,5 @@
-// Credit-to-GDP ratio. Stubbed at 0 until Phase 8 commercial banks.
+// Credit-to-GDP ratio + bank solvency overlay. Phase 9+.
+// Left axis: creditToGdp. Right axis: bankSolvency (fixed 0–1).
 
 import type { SimStats } from '../../types/sim';
 import type { PolicyEvent } from '../../types/events';
@@ -8,7 +9,7 @@ interface Props {
   events?: PolicyEvent[];
 }
 
-const W = 300, H = 90, ML = 44, MR = 8, MT = 8, MB = 20;
+const W = 300, H = 90, ML = 44, MR = 28, MT = 8, MB = 20;
 
 export function CreditGdpChart({ history, events }: Props) {
   if (history.length < 2) return null;
@@ -19,26 +20,47 @@ export function CreditGdpChart({ history, events }: Props) {
   const maxTick = history[history.length - 1].tick;
   const tickRange = maxTick - minTick || 1;
 
-  const maxVal = Math.max(...history.map(d => d.creditToGdp), 0.001);
-  const lastVal = history[history.length - 1].creditToGdp;
+  const maxCredit = Math.max(...history.map(d => d.creditToGdp), 0.001);
+  const lastCredit   = history[history.length - 1].creditToGdp;
+  const lastSolvency = history[history.length - 1].bankSolvency;
 
-  const points = history.map(d => {
+  const creditPoints = history.map(d => {
     const x = ML + ((d.tick - minTick) / tickRange) * iW;
-    const y = MT + iH - (d.creditToGdp / maxVal) * iH;
+    const y = MT + iH - (d.creditToGdp / maxCredit) * iH;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+
+  const solvencyPoints = history.map(d => {
+    const x = ML + ((d.tick - minTick) / tickRange) * iW;
+    const y = MT + iH - d.bankSolvency * iH;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
 
   return (
     <div style={wrapStyle}>
-      <div style={titleStyle}>CREDIT / GDP — {lastVal.toFixed(2)}</div>
+      <div style={titleStyle}>
+        CREDIT / GDP — {lastCredit.toFixed(2)}
+        <span style={solLabelStyle}> · SOLVENCY {lastSolvency.toFixed(2)}</span>
+      </div>
       <svg width={W} height={H} style={svgStyle}>
+        {/* axes */}
         <line x1={ML} y1={MT} x2={ML} y2={MT + iH} stroke="#333" />
         <line x1={ML} y1={MT + iH} x2={ML + iW} y2={MT + iH} stroke="#333" />
-        <text x={ML - 4} y={MT + 4} textAnchor="end" fill="#555" fontSize={9}>{maxVal.toFixed(1)}</text>
-        <text x={ML - 4} y={MT + iH} textAnchor="end" fill="#555" fontSize={9}>0</text>
-        <text x={ML} y={H - 4} textAnchor="middle" fill="#555" fontSize={9}>{minTick}</text>
+        <line x1={ML + iW} y1={MT} x2={ML + iW} y2={MT + iH} stroke="#2a2a2a" />
+
+        {/* left axis labels (credit) */}
+        <text x={ML - 4} y={MT + 4}      textAnchor="end" fill="#555" fontSize={9}>{maxCredit.toFixed(1)}</text>
+        <text x={ML - 4} y={MT + iH}     textAnchor="end" fill="#555" fontSize={9}>0</text>
+
+        {/* right axis labels (solvency) */}
+        <text x={ML + iW + 4} y={MT + 4}  textAnchor="start" fill="#6a3a8a" fontSize={9}>1</text>
+        <text x={ML + iW + 4} y={MT + iH} textAnchor="start" fill="#6a3a8a" fontSize={9}>0</text>
+
+        {/* tick labels */}
+        <text x={ML}      y={H - 4} textAnchor="middle" fill="#555" fontSize={9}>{minTick}</text>
         <text x={ML + iW} y={H - 4} textAnchor="middle" fill="#555" fontSize={9}>{maxTick}</text>
 
+        {/* policy event markers */}
         {events?.map(ev => {
           if (ev.tick < minTick || ev.tick > maxTick) return null;
           const ex = ML + ((ev.tick - minTick) / tickRange) * iW;
@@ -51,7 +73,11 @@ export function CreditGdpChart({ history, events }: Props) {
           );
         })}
 
-        <polyline points={points} fill="none" stroke="#e05555" strokeWidth={1.5} />
+        {/* solvency line (behind credit line) */}
+        <polyline points={solvencyPoints} fill="none" stroke="#c060e0" strokeWidth={1} opacity={0.7} />
+
+        {/* credit/GDP line */}
+        <polyline points={creditPoints} fill="none" stroke="#e05555" strokeWidth={1.5} />
       </svg>
     </div>
   );
@@ -59,4 +85,5 @@ export function CreditGdpChart({ history, events }: Props) {
 
 const wrapStyle: React.CSSProperties = { marginBottom: 0 };
 const titleStyle: React.CSSProperties = { fontSize: 10, color: '#555', letterSpacing: 2, marginBottom: 2 };
+const solLabelStyle: React.CSSProperties = { color: '#7a3a9a', letterSpacing: 1 };
 const svgStyle: React.CSSProperties = { display: 'block', background: '#0d0d0d' };

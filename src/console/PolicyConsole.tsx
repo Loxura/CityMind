@@ -9,6 +9,7 @@ import { UbiAmountSlider } from './controls/UbiAmountSlider';
 import { MinWageSlider } from './controls/MinWageSlider';
 import { LandPolicySelect } from './controls/LandPolicySelect';
 import { CentralBankControls } from './controls/CentralBankControls';
+import { BankingControls } from './controls/BankingControls';
 import { defaultPolicy } from '../sim/policy';
 import type { PolicyState, RedistributionModel, SeedMode } from '../types/sim';
 import type { MainToSim } from '../types/messages';
@@ -16,13 +17,14 @@ import type { PolicyEvent } from '../types/events';
 
 // Fixed colours per policy field — used for chart event markers.
 const EVENT_COLORS: Partial<Record<keyof PolicyState, string>> = {
-  taxRate:          '#7c5cfc',
-  redistribution:   '#3cc8a0',
-  ubiAmount:        '#3cc8a0',
-  minWage:          '#f0a040',
-  landPolicy:       '#e05555',
-  isCurrencyActive: '#3cc8a0',
-  centralBankRate:  '#3cc8a0',
+  taxRate:            '#7c5cfc',
+  redistribution:     '#3cc8a0',
+  ubiAmount:          '#3cc8a0',
+  minWage:            '#f0a040',
+  landPolicy:         '#e05555',
+  isCurrencyActive:   '#3cc8a0',
+  centralBankRate:    '#3cc8a0',
+  reserveRequirement: '#c060e0',
 };
 
 function pct(v: unknown): string {
@@ -56,21 +58,30 @@ function makeLabel(key: keyof PolicyState, oldPolicy: PolicyState, newVal: unkno
       return newVal ? 'Currency ON' : 'Currency OFF';
     case 'centralBankRate':
       return `Rate ${((newVal as number) * 100).toFixed(1)}%`;
+    case 'reserveRequirement':
+      return `Reserve ${((newVal as number) * 100).toFixed(0)}%`;
     default:
       return String(key);
   }
 }
 
-interface Props {
-  worker:         Worker | null;
-  currentTick:    number;
-  seedMode:       SeedMode;
-  onSeedChange:   (m: SeedMode) => void;
-  onEvent:        (e: PolicyEvent) => void;
-  onPolicyChange?: (patch: Partial<PolicyState>) => void;
+interface BankDisplay {
+  isSolvent:        boolean;
+  loansOutstanding: number;
+  capitalBuffer:    number;
 }
 
-export function PolicyConsole({ worker, currentTick, seedMode, onSeedChange, onEvent, onPolicyChange }: Props) {
+interface Props {
+  worker:          Worker | null;
+  currentTick:     number;
+  seedMode:        SeedMode;
+  onSeedChange:    (m: SeedMode) => void;
+  onEvent:         (e: PolicyEvent) => void;
+  onPolicyChange?: (patch: Partial<PolicyState>) => void;
+  bankDisplay?:    BankDisplay | null;
+}
+
+export function PolicyConsole({ worker, currentTick, seedMode, onSeedChange, onEvent, onPolicyChange, bankDisplay }: Props) {
   const [policy, setPolicy] = useState<PolicyState>(defaultPolicy);
 
   function update(patch: Partial<PolicyState>) {
@@ -153,6 +164,16 @@ export function PolicyConsole({ worker, currentTick, seedMode, onSeedChange, onE
           onToggleCurrency={v => update({ isCurrencyActive: v })}
           onRateChange={v => update({ centralBankRate: v })}
           onSupplyChange={v => update({ moneySupplyGrowth: v })}
+        />
+      </section>
+
+      <section style={sectionStyle}>
+        <div style={sectionTitleStyle}>Banking</div>
+        <BankingControls
+          isCurrencyActive={policy.isCurrencyActive}
+          reserveRequirement={policy.reserveRequirement}
+          bankDisplay={bankDisplay ?? null}
+          onReserveChange={v => update({ reserveRequirement: v })}
         />
       </section>
     </div>

@@ -15,7 +15,7 @@ import { tick, initAgents, seedRng } from './tick';
 import { createMap } from './map';
 import { computeStats, resetStats } from './stats';
 import { resetMarket, activateCurrency, getMarketStats } from './market';
-import { defaultPolicy, applyPolicyPatch } from './policy';
+import { defaultPolicy, applyPolicyPatch, resetBankState } from './policy';
 import { getField } from './agent';
 import EvoWorkerCtor from '../evolution/worker.ts?worker';
 import * as tf from '@tensorflow/tfjs';
@@ -127,6 +127,7 @@ function handleInit(agentCount: number, seed: number, initPolicy: PolicyState, s
 
     resetMarket();
     resetStats();
+    resetBankState();
     prevCurrencyActive = false;
     seedRng(seed);
     const agentSeeds = seedMode === 'flat' ? undefined : MOROCCO_URBAN_SEED;

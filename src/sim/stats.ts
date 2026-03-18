@@ -4,6 +4,7 @@ import { getMarketStats } from './market';
 import { getLabourStats } from './labour';
 import { getHarvestStats } from './harvest';
 import { getHousingStats } from './housing';
+import { getBankStats } from './bank';
 import type { SimStats } from '../types/sim';
 
 // Phase 7/8: rolling inflation tracker.
@@ -129,6 +130,8 @@ export function computeStats(
   // Multiplied by STATS_INTERVAL to convert per-tick to per-interval rate.
   const landRentIndex = n > 0 ? (rentCollected / n) : 0;
 
+  const { creditToGdp, bankSolvency, bankLoansOutstanding, bankCapitalBuffer } = getBankStats(gdp);
+
   return {
     tick,
     population:       n,
@@ -149,11 +152,13 @@ export function computeStats(
     avgIncome,
     inflationRate,
     avgCash,
-    creditToGdp:      0,
+    creditToGdp,
+    bankSolvency,
+    bankLoansOutstanding,
+    bankCapitalBuffer,
     roleCounts,
     techsUnlocked: [],
     stockIndex:    0,
-    bankSolvency:  1,
     tradeCount,
     tickTradeCount,
   };
