@@ -32,6 +32,26 @@ function computeWealthBrackets(sorted: number[]): number[] {
   return brackets;
 }
 
+// Compute total wealth held per decile bin from a sorted wealth array.
+// Same bin boundaries as computeWealthBrackets — sums wealth instead of counting agents.
+function computeWealthByBracket(sorted: number[]): number[] {
+  const n = sorted.length;
+  const brackets = new Array<number>(10).fill(0);
+  if (n === 0) return brackets;
+  const min = sorted[0];
+  const max = sorted[n - 1];
+  const range = max - min;
+  if (range === 0) {
+    brackets[0] = sorted.reduce((s, w) => s + w, 0);
+    return brackets;
+  }
+  for (const w of sorted) {
+    const bucket = Math.min(9, Math.floor(((w - min) / range) * 10));
+    brackets[bucket] += w;
+  }
+  return brackets;
+}
+
 export function computeStats(
   sab: Float32Array,
   n: number,
@@ -55,8 +75,9 @@ export function computeStats(
 
   // wealthBrackets needs sorted order (computeGini already sorts internally,
   // but we sort separately here to avoid coupling)
-  const sortedWealths = Array.from(wealths).sort((a, b) => a - b);
-  const wealthBrackets = computeWealthBrackets(sortedWealths);
+  const sortedWealths   = Array.from(wealths).sort((a, b) => a - b);
+  const wealthBrackets  = computeWealthBrackets(sortedWealths);
+  const wealthByBracket = computeWealthByBracket(sortedWealths);
 
   const { foodPrice, woodPrice, tradeCount, tickTradeCount } = getMarketStats();
   const { wageRate, unemploymentRate, totalWages } = getLabourStats();
@@ -83,6 +104,7 @@ export function computeStats(
     avgWood,
     gini,
     wealthBrackets,
+    wealthByBracket,
     foodPrice,
     woodPrice,
     gdp,

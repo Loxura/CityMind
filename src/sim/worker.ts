@@ -10,6 +10,7 @@ self.addEventListener('unhandledrejection', (e) => {
 });
 
 import { SAB_SIZE, STATS_INTERVAL, INITIAL_AGENT_COUNT, AGENT_FIELDS } from '../types/constants';
+import { MOROCCO_URBAN_SEED } from './seeds/moroccoUrbanSeed';
 import { tick, initAgents, seedRng } from './tick';
 import { createMap } from './map';
 import { computeStats } from './stats';
@@ -105,8 +106,8 @@ function doTick(): void {
   }
 }
 
-function handleInit(agentCount: number, seed: number, initPolicy: PolicyState): void {
-  console.log(`[SimWorker] handleInit called — agentCount=${agentCount} seed=${seed}`);
+function handleInit(agentCount: number, seed: number, initPolicy: PolicyState, seedMode: 'morocco' | 'flat' = 'morocco'): void {
+  console.log(`[SimWorker] handleInit called — agentCount=${agentCount} seed=${seed} seedMode=${seedMode}`);
   try {
     console.log(`[SimWorker] allocating SAB: ${SAB_SIZE} bytes`);
     sab = new SharedArrayBuffer(SAB_SIZE);
@@ -116,7 +117,8 @@ function handleInit(agentCount: number, seed: number, initPolicy: PolicyState): 
 
     resetMarket();
     seedRng(seed);
-    activeCount = initAgents(sabView, agentCount, seed, policy.landPolicy === 'free');
+    const agentSeeds = seedMode === 'flat' ? undefined : MOROCCO_URBAN_SEED;
+    activeCount = initAgents(sabView, agentCount, seed, policy.landPolicy === 'free', agentSeeds);
     tickNumber = 0;
     running = true;
 
@@ -151,7 +153,7 @@ self.addEventListener('message', (e: MessageEvent<MainToSim>) => {
   try {
     switch (msg.type) {
       case 'INIT':
-        handleInit(msg.agentCount, msg.seed, msg.policy);
+        handleInit(msg.agentCount, msg.seed, msg.policy, msg.seedMode ?? 'morocco');
         break;
 
       case 'POLICY':
@@ -168,7 +170,7 @@ self.addEventListener('message', (e: MessageEvent<MainToSim>) => {
 
       case 'RESET':
         if (intervalId !== null) { clearInterval(intervalId); intervalId = null; }
-        handleInit(INITIAL_AGENT_COUNT, msg.seed, defaultPolicy());
+        handleInit(INITIAL_AGENT_COUNT, msg.seed, defaultPolicy(), msg.seedMode ?? 'morocco');
         break;
 
       default:

@@ -49,8 +49,8 @@ export const MAX_STABLE_POPULATION = 500;
 export const MAP_WIDTH  = 50;
 export const MAP_HEIGHT = 50;
 
-// Phase 1 initial conditions
-export const INITIAL_AGENT_COUNT = 200;
+// Phase 6 initial conditions — Morocco urban seed (500 agents, Gini ~0.40)
+export const INITIAL_AGENT_COUNT = 500;
 export const INITIAL_FOOD        = 20;
 export const INITIAL_WOOD        = 5;
 export const INITIAL_ENERGY      = 100;

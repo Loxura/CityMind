@@ -4,6 +4,7 @@
 
 import { AGENT_FIELDS, AGENT_STRIDE, MAX_AGENTS, INITIAL_ENERGY, MAP_WIDTH, MAP_HEIGHT } from '../types/constants';
 import { getField, setField, initAgent } from './agent';
+import type { AgentSeed } from './seeds/moroccoUrbanSeed';
 import { applyNetHarvest, resetHarvestTick } from './harvest';
 import { isDead, ageAgent, updateWealth, tryReproduce } from './lifecycle';
 import { regenerateTiles } from './map';
@@ -43,11 +44,14 @@ let _nextId = 0;
 let _grid   = new SpatialGrid();
 
 // land=1 when landPolicy='free' so the labour market has active employers from tick 1.
+// agentSeeds: when provided, each agent's initial food/wood comes from the seed array
+// (cycling if count > seed length). Spatial placement always uses the RNG.
 export function initAgents(
   sab: Float32Array,
   count: number,
   seed: number,
   landFree: boolean,
+  agentSeeds?: AgentSeed[],
 ): number {
   seedRng(seed);
   _nextId = 0;
@@ -56,7 +60,10 @@ export function initAgents(
   for (let i = 0; i < count; i++) {
     const x = Math.floor(rng() * MAP_WIDTH);
     const y = Math.floor(rng() * MAP_HEIGHT);
-    initAgent(sab, i, _nextId++, x, y, 20, 5, INITIAL_ENERGY, land);
+    const s = agentSeeds ? agentSeeds[i % agentSeeds.length] : null;
+    const food = s ? s.initialFood : 20;
+    const wood = s ? s.initialWood : 5;
+    initAgent(sab, i, _nextId++, x, y, food, wood, INITIAL_ENERGY, land);
     initWeights(sab, i, rng);
   }
   return count;

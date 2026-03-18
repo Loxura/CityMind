@@ -1,6 +1,6 @@
 // Phase 4 policy console — all levers live-adjustable.
-// Changes are sent to Sim Worker via postMessage POLICY message.
-// Takes effect on the next tick.
+// Changes are sent to Sim Worker via postMessage POLICY message on the next tick.
+// Each change also emits a PolicyEvent for chart markers.
 
 import { useState } from 'react';
 import { TaxSlider } from './controls/TaxSlider';
@@ -9,28 +9,98 @@ import { UbiAmountSlider } from './controls/UbiAmountSlider';
 import { MinWageSlider } from './controls/MinWageSlider';
 import { LandPolicySelect } from './controls/LandPolicySelect';
 import { defaultPolicy } from '../sim/policy';
-import type { PolicyState } from '../types/sim';
+import type { PolicyState, RedistributionModel, SeedMode } from '../types/sim';
 import type { MainToSim } from '../types/messages';
+import type { PolicyEvent } from '../types/events';
 
-interface Props {
-  worker: Worker | null;
+// Fixed colours per policy field — used for chart event markers.
+const EVENT_COLORS: Partial<Record<keyof PolicyState, string>> = {
+  taxRate:        '#7c5cfc',
+  redistribution: '#3cc8a0',
+  ubiAmount:      '#3cc8a0',
+  minWage:        '#f0a040',
+  landPolicy:     '#e05555',
+};
+
+function pct(v: unknown): string {
+  return `${Math.round((v as number) * 100)}%`;
 }
 
-export function PolicyConsole({ worker }: Props) {
+function redistLabel(v: RedistributionModel): string {
+  const map: Record<RedistributionModel, string> = {
+    none:             'No redistrib',
+    ubi:              'UBI on',
+    targeted_welfare: 'Welfare',
+    public_goods:     'Public goods',
+    infrastructure:   'Infrastr.',
+  };
+  return map[v] ?? v;
+}
+
+function makeLabel(key: keyof PolicyState, oldPolicy: PolicyState, newVal: unknown): string {
+  switch (key) {
+    case 'taxRate':
+      return `Tax ${pct(oldPolicy.taxRate)}→${pct(newVal)}`;
+    case 'redistribution':
+      return redistLabel(newVal as RedistributionModel);
+    case 'ubiAmount':
+      return `UBI ${pct(newVal)}`;
+    case 'minWage':
+      return `MinWage ${(newVal as number).toFixed(1)}`;
+    case 'landPolicy':
+      return `Land: ${newVal}`;
+    default:
+      return String(key);
+  }
+}
+
+interface Props {
+  worker:         Worker | null;
+  currentTick:    number;
+  seedMode:       SeedMode;
+  onSeedChange:   (m: SeedMode) => void;
+  onEvent:        (e: PolicyEvent) => void;
+  onPolicyChange?: (patch: Partial<PolicyState>) => void;
+}
+
+export function PolicyConsole({ worker, currentTick, seedMode, onSeedChange, onEvent, onPolicyChange }: Props) {
   const [policy, setPolicy] = useState<PolicyState>(defaultPolicy);
 
   function update(patch: Partial<PolicyState>) {
     const next = { ...policy, ...patch };
     setPolicy(next);
+
     if (worker) {
       const msg: MainToSim = { type: 'POLICY', policy: patch };
       worker.postMessage(msg);
+    }
+
+    onPolicyChange?.(patch);
+
+    // Emit one event per changed key
+    for (const key of Object.keys(patch) as (keyof PolicyState)[]) {
+      const color = EVENT_COLORS[key] ?? '#888888';
+      const label = makeLabel(key, policy, patch[key]);
+      onEvent({ tick: currentTick, label, color });
     }
   }
 
   return (
     <div style={consoleStyle}>
       <div style={titleStyle}>POLICY CONSOLE</div>
+
+      <section style={sectionStyle}>
+        <div style={sectionTitleStyle}>Starting conditions</div>
+        <select
+          style={seedSelectStyle}
+          value={seedMode}
+          onChange={e => onSeedChange(e.target.value as SeedMode)}
+        >
+          <option value="morocco">Morocco urban 2022 (Gini ≈ 0.40)</option>
+          <option value="flat">Flat (equal)</option>
+        </select>
+        <div style={noteStyle}>Applies on next Reset.</div>
+      </section>
 
       <section style={sectionStyle}>
         <div style={sectionTitleStyle}>Fiscal</div>
@@ -107,4 +177,15 @@ const noteStyle: React.CSSProperties = {
   fontSize: 11,
   color: '#555',
   marginTop: 4,
+};
+
+const seedSelectStyle: React.CSSProperties = {
+  background:  '#0d0d0d',
+  border:      '1px solid #333',
+  color:       '#e0e0e0',
+  fontFamily:  'monospace',
+  fontSize:    11,
+  padding:     '3px 6px',
+  width:       '100%',
+  outline:     'none',
 };

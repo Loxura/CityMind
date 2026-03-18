@@ -1,19 +1,27 @@
+import { useEffect, useState } from 'react';
+
 interface Props {
   value: number;
   onChange: (v: number) => void;
 }
 
 export function MinWageSlider({ value, onChange }: Props) {
+  const [localValue, setLocalValue] = useState(value);
+
+  useEffect(() => { setLocalValue(value); }, [value]);
+
   return (
     <div style={rowStyle}>
       <label style={labelStyle}>Min Wage</label>
       <input
         type="range" min={0} max={30} step={0.5}
-        value={value}
-        onChange={e => onChange(parseFloat(e.target.value))}
+        value={localValue}
+        onChange={e => setLocalValue(parseFloat(e.target.value))}
+        onMouseUp={e => onChange(parseFloat((e.target as HTMLInputElement).value))}
+        onTouchEnd={e => onChange(parseFloat((e.target as HTMLInputElement).value))}
         style={sliderStyle}
       />
-      <span style={valueStyle}>{value.toFixed(1)}</span>
+      <span style={valueStyle}>{localValue.toFixed(1)}</span>
     </div>
   );
 }

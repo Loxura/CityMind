@@ -1,12 +1,12 @@
-import type { SimStats, PolicyState } from './sim';
+import type { SimStats, PolicyState, SeedMode } from './sim';
 
 // Main thread → Sim Worker
 export type MainToSim =
-  | { type: 'INIT';   agentCount: number; seed: number; policy: PolicyState }
+  | { type: 'INIT';   agentCount: number; seed: number; policy: PolicyState; seedMode?: SeedMode }
   | { type: 'POLICY'; policy: Partial<PolicyState> }
   | { type: 'PAUSE' }
   | { type: 'RESUME' }
-  | { type: 'RESET';  seed: number }
+  | { type: 'RESET';  seed: number; seedMode?: SeedMode }
 
 // Sim Worker → Main thread
 export type SimToMain =

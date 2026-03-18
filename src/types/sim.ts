@@ -1,6 +1,7 @@
 export type AgentRole = 'farmer' | 'builder' | 'merchant' | 'banker' | 'capitalist' | 'worker';
 export type TechId = 'grain_silo' | 'sawmill' | 'fishery' | 'textile_mill' | 'bank_charter' | 'stock_listing';
 export type RedistributionModel = 'ubi' | 'targeted_welfare' | 'public_goods' | 'infrastructure' | 'none';
+export type SeedMode = 'morocco' | 'flat';
 
 export interface SimStats {
   tick:             number;
@@ -10,7 +11,8 @@ export interface SimStats {
   // Phase 2+ fields — stub zero in Phase 1
   gdp:              number;
   gini:             number;
-  wealthBrackets:   number[];
+  wealthBrackets:   number[];   // agent count per decile bin
+  wealthByBracket:  number[];   // total wealth held per decile bin (Piketty view)
   foodPrice:        number;
   woodPrice:        number;
   wageRate:         number;

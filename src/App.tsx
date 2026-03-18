@@ -1,24 +1,33 @@
-// Main thread only: connects to Sim Worker, displays raw SimStats as text.
-// No simulation logic here — all sim runs in the worker.
+// Main thread only. No simulation logic — all sim runs in the Sim Worker.
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSimStats } from './dashboard/useSimStats';
+import { Dashboard } from './dashboard/Dashboard';
 import { defaultPolicy } from './sim/policy';
 import { INITIAL_AGENT_COUNT } from './types/constants';
 import { PolicyConsole } from './console/PolicyConsole';
-import { WageChart } from './dashboard/charts/WageChart';
-import { LabourShareChart } from './dashboard/charts/LabourShareChart';
-import { EmploymentChart } from './dashboard/charts/EmploymentChart';
+import { ScenarioManager } from './console/ScenarioManager';
 import type { MainToSim } from './types/messages';
+import type { PolicyEvent } from './types/events';
+import type { PolicyState, SeedMode } from './types/sim';
 
-// Vite worker import — bundled as a separate chunk
 import SimWorkerUrl from './sim/worker.ts?worker';
+
+const DEFAULT_TICK_LIMIT = 5000;
 
 export default function App() {
   const workerRef = useRef<Worker | null>(null);
   const [worker, setWorker] = useState<Worker | null>(null);
-  const [paused, setPaused] = useState(false);
-  const { stats, history, error } = useSimStats(worker);
+
+  const [paused,        setPaused]        = useState(false);
+  const [events,        setEvents]        = useState<PolicyEvent[]>([]);
+  const [currentSeed,   setCurrentSeed]   = useState(42);
+  const [currentPolicy, setCurrentPolicy] = useState<PolicyState>(defaultPolicy());
+  const [seedMode,      setSeedMode]      = useState<SeedMode>('morocco');
+  const [tickLimit,     setTickLimit]     = useState(DEFAULT_TICK_LIMIT);
+  const [savedRunCount, setSavedRunCount] = useState(0);
+
+  const { stats, history, error, resetHistory } = useSimStats(worker);
 
   // Boot the Sim Worker on mount
   useEffect(() => {
@@ -27,18 +36,33 @@ export default function App() {
     setWorker(w);
 
     const init: MainToSim = {
-      type: 'INIT',
+      type:       'INIT',
       agentCount: INITIAL_AGENT_COUNT,
-      seed: 42,
-      policy: defaultPolicy(),
+      seed:       42,
+      policy:     defaultPolicy(),
+      seedMode:   'morocco',
     };
     console.log('[App] Sending INIT to SimWorker');
     w.postMessage(init);
-
     w.addEventListener('error', (e) => console.error('[App] Worker uncaught error:', e));
-
     return () => w.terminate();
   }, []);
+
+  // Auto-pause when tick limit is reached
+  useEffect(() => {
+    if (!paused && stats && stats.tick >= tickLimit) {
+      workerRef.current?.postMessage({ type: 'PAUSE' } as MainToSim);
+      setPaused(true);
+    }
+  }, [stats?.tick, tickLimit, paused]);
+
+  const handleEvent = useCallback((e: PolicyEvent) => {
+    setEvents(prev => [...prev, e]);
+  }, []);
+
+  function handlePolicyChange(patch: Partial<PolicyState>) {
+    setCurrentPolicy(prev => ({ ...prev, ...patch }));
+  }
 
   function handlePauseResume() {
     const w = workerRef.current;
@@ -51,68 +75,101 @@ export default function App() {
   function handleReset() {
     const w = workerRef.current;
     if (!w) return;
-    const msg: MainToSim = { type: 'RESET', seed: Math.floor(Math.random() * 0xffffffff) };
-    w.postMessage(msg);
+    const newSeed = Math.floor(Math.random() * 0xffffffff);
+    w.postMessage({ type: 'RESET', seed: newSeed, seedMode } as MainToSim);
+    setCurrentSeed(newSeed);
+    resetHistory();
+    setEvents([]);
     setPaused(false);
   }
 
+  const atTickLimit = !!(stats && stats.tick >= tickLimit && paused);
+
   return (
     <div style={layoutStyle}>
-      {/* Left: Policy Console */}
+
+      {/* Left column */}
       <div style={leftColStyle}>
-        <h1 style={titleStyle}>CITYMIND — Phase 4</h1>
-        <PolicyConsole worker={worker} />
-        <div style={{ marginTop: 16, display: 'flex', gap: 8 }}>
+        <h1 style={titleStyle}>CITYMIND — Phase 6</h1>
+
+        <PolicyConsole
+          worker={worker}
+          currentTick={stats?.tick ?? 0}
+          seedMode={seedMode}
+          onSeedChange={setSeedMode}
+          onEvent={handleEvent}
+          onPolicyChange={handlePolicyChange}
+        />
+
+        <ScenarioManager
+          currentSeed={currentSeed}
+          currentSeedMode={seedMode}
+          currentPolicy={currentPolicy}
+          currentHistory={history}
+          onRunSaved={() => setSavedRunCount(n => n + 1)}
+          onSeedModeChange={setSeedMode}
+        />
+
+        {/* Tick limit + run controls */}
+        <div style={controlsRowStyle}>
+          <label style={limitLabelStyle}>
+            Auto-pause at tick:
+            <input
+              type="number"
+              min={60}
+              step={60}
+              value={tickLimit}
+              onChange={e => setTickLimit(Math.max(60, Number(e.target.value)))}
+              style={limitInputStyle}
+            />
+          </label>
+        </div>
+
+        <div style={{ marginTop: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
           <button onClick={handlePauseResume} style={btnStyle}>
             {paused ? 'Resume' : 'Pause'}
           </button>
           <button onClick={handleReset} style={btnStyle}>Reset</button>
+          {atTickLimit && (
+            <span style={limitReachedStyle}>tick limit reached</span>
+          )}
         </div>
-      </div>
 
-      {/* Right: Dashboard */}
-      <div style={rightColStyle}>
-        {error && (
-          <div style={errorStyle}>
-            Worker error: {error}
-            <button onClick={handleReset} style={btnStyle}>Reset</button>
-          </div>
-        )}
-
-        {/* Stats panel */}
+        {/* Numeric stats table */}
+        {error && <div style={errorStyle}>Worker error: {error}</div>}
         <div style={panelStyle}>
           {stats ? (
             <table style={{ borderCollapse: 'collapse', width: '100%' }}>
               <tbody>
-                <Row label="Tick"              value={stats.tick} />
-                <Row label="Population"        value={stats.population} />
-                <Row label="Avg Food"          value={stats.avgFood.toFixed(2)} />
-                <Row label="Avg Wood"          value={stats.avgWood.toFixed(2)} />
-                <Row label="Gini"              value={stats.gini.toFixed(4)} />
-                <Row label="GDP"               value={stats.gdp.toFixed(2)} />
-                <Row label="Food Price"        value={stats.foodPrice.toFixed(3)} />
-                <Row label="Wood Price"        value={stats.woodPrice.toFixed(3)} />
-                <Row label="Wage Rate"         value={stats.wageRate.toFixed(3)} />
-                <Row label="Unemployment"      value={(stats.unemploymentRate * 100).toFixed(1) + '%'} />
-                <Row label="Labour Share"      value={(stats.labourShareOfGdp * 100).toFixed(1) + '%'} />
-                <Row label="Trades (total)"    value={stats.tradeCount} />
-                <Row label="Trades (this tick)" value={stats.tickTradeCount} />
+                <Row label="Tick"          value={stats.tick} />
+                <Row label="Population"    value={stats.population} />
+                <Row label="Avg Food"      value={stats.avgFood.toFixed(1)} />
+                <Row label="Avg Wood"      value={stats.avgWood.toFixed(1)} />
+                <Row label="Gini"          value={stats.gini.toFixed(4)} />
+                <Row label="GDP"           value={stats.gdp.toFixed(1)} />
+                <Row label="Food Price"    value={stats.foodPrice.toFixed(3)} />
+                <Row label="Wood Price"    value={stats.woodPrice.toFixed(3)} />
+                <Row label="Wage Rate"     value={stats.wageRate.toFixed(2)} />
+                <Row label="Unemployment"  value={(stats.unemploymentRate * 100).toFixed(1) + '%'} />
+                <Row label="Labour Share"  value={(stats.labourShareOfGdp * 100).toFixed(1) + '%'} />
+                <Row label="Trades (tick)" value={stats.tickTradeCount} />
+                <Row label="Trades (all)"  value={stats.tradeCount} />
               </tbody>
             </table>
           ) : (
             <span style={{ color: '#888' }}>Initialising simulation…</span>
           )}
         </div>
-
-        {/* Phase 4 charts */}
-        {history.length > 1 && (
-          <div style={{ marginTop: 16 }}>
-            <WageChart history={history} />
-            <LabourShareChart history={history} />
-            <EmploymentChart history={history} />
-          </div>
-        )}
       </div>
+
+      {/* Right column: dashboard */}
+      <Dashboard
+        stats={stats}
+        history={history}
+        events={events}
+        savedRunCount={savedRunCount}
+      />
+
     </div>
   );
 }
@@ -120,58 +177,87 @@ export default function App() {
 function Row({ label, value }: { label: string; value: string | number }) {
   return (
     <tr>
-      <td style={{ color: '#888', paddingRight: 24, paddingBottom: 6 }}>{label}</td>
-      <td style={{ color: '#e0e0e0', fontWeight: 'bold' }}>{value}</td>
+      <td style={{ color: '#888', paddingRight: 20, paddingBottom: 5, fontSize: 12 }}>{label}</td>
+      <td style={{ color: '#e0e0e0', fontWeight: 'bold', fontSize: 12 }}>{value}</td>
     </tr>
   );
 }
 
 const layoutStyle: React.CSSProperties = {
-  display: 'flex',
-  gap: 24,
-  padding: 16,
-  minHeight: '100vh',
+  display:    'flex',
+  gap:        24,
+  padding:    16,
+  minHeight:  '100vh',
   background: '#0a0a0a',
-  color: '#e0e0e0',
+  color:      '#e0e0e0',
   fontFamily: 'monospace',
 };
 
 const leftColStyle: React.CSSProperties = {
   flexShrink: 0,
-  width: 400,
-};
-
-const rightColStyle: React.CSSProperties = {
-  flex: 1,
-  minWidth: 0,
+  width:      380,
 };
 
 const titleStyle: React.CSSProperties = {
-  fontSize: 18,
-  marginBottom: 16,
-  letterSpacing: 2,
+  fontSize:      16,
+  marginBottom:  16,
+  letterSpacing: 3,
+  color:         '#e0e0e0',
+};
+
+const controlsRowStyle: React.CSSProperties = {
+  marginTop:   12,
+  display:     'flex',
+  alignItems:  'center',
+};
+
+const limitLabelStyle: React.CSSProperties = {
+  fontSize:    11,
+  color:       '#555',
+  display:     'flex',
+  alignItems:  'center',
+  gap:         6,
+  letterSpacing: 0.5,
+};
+
+const limitInputStyle: React.CSSProperties = {
+  background:  '#0d0d0d',
+  border:      '1px solid #333',
+  color:       '#e0e0e0',
+  fontFamily:  'monospace',
+  fontSize:    11,
+  padding:     '2px 5px',
+  width:       64,
+  outline:     'none',
+};
+
+const limitReachedStyle: React.CSSProperties = {
+  fontSize:  10,
+  color:     '#3cc8a0',
+  letterSpacing: 1,
 };
 
 const panelStyle: React.CSSProperties = {
-  background: '#1a1a1a',
-  border: '1px solid #333',
-  padding: 16,
-  minHeight: 96,
+  background: '#111',
+  border:     '1px solid #222',
+  padding:    12,
+  marginTop:  16,
 };
 
 const errorStyle: React.CSSProperties = {
-  color: '#ff4444',
-  marginBottom: 12,
-  padding: 8,
-  border: '1px solid #ff4444',
+  color:     '#ff4444',
+  marginTop: 12,
+  padding:   8,
+  border:    '1px solid #ff4444',
+  fontSize:  12,
 };
 
 const btnStyle: React.CSSProperties = {
-  background: '#222',
-  color: '#e0e0e0',
-  border: '1px solid #555',
-  padding: '6px 16px',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
-  fontSize: 13,
+  background:  '#1a1a1a',
+  color:       '#e0e0e0',
+  border:      '1px solid #444',
+  padding:     '6px 16px',
+  cursor:      'pointer',
+  fontFamily:  'monospace',
+  fontSize:    12,
 };

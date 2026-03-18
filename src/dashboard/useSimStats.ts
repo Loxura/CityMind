@@ -8,6 +8,7 @@ export function useSimStats(worker: Worker | null): {
   stats: SimStats | null;
   history: SimStats[];
   error: string | null;
+  resetHistory: () => void;
 } {
   const [stats, setStats] = useState<SimStats | null>(null);
   const [history, setHistory] = useState<SimStats[]>([]);
@@ -39,5 +40,10 @@ export function useSimStats(worker: Worker | null): {
     return () => worker.removeEventListener('message', onMessage);
   }, [worker]);
 
-  return { stats, history, error };
+  function resetHistory() {
+    setStats(null);
+    setHistory([]);
+  }
+
+  return { stats, history, error, resetHistory };
 }
