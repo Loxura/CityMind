@@ -3,14 +3,17 @@ import { getField } from './agent';
 import { getMarketStats } from './market';
 import { getLabourStats } from './labour';
 import { getHarvestStats } from './harvest';
+import { getHousingStats } from './housing';
 import type { SimStats } from '../types/sim';
 
-// Phase 7: rolling inflation tracker — compares current foodMoneyPrice to previous sample.
-// resetStats() must be called on INIT/RESET.
-let _prevFoodMoneyPrice = 0;
+// Phase 7/8: rolling inflation tracker.
+// Phase 7 used foodMoneyPrice (fixed at bootstrap → always 0). Phase 8 fix: track
+// the barter foodPrice ring buffer which reflects real supply/demand movements.
+// This correctly captures the Phase 7 deflationary trap (food price collapsed to 0.189).
+let _prevFoodPrice = 0;
 
 export function resetStats(): void {
-  _prevFoodMoneyPrice = 0;
+  _prevFoodPrice = 0;
 }
 
 // Copy this function exactly — do not reimplement.
@@ -63,9 +66,10 @@ export function computeStats(
   n: number,
   tick: number,
 ): SimStats {
-  let totalFood = 0;
-  let totalWood = 0;
-  let totalCash = 0;
+  let totalFood   = 0;
+  let totalWood   = 0;
+  let totalCash   = 0;
+  let totalHouses = 0;
 
   // Collect wealth values into a reusable Float32Array for Gini
   const wealths = new Float32Array(n);
@@ -74,12 +78,14 @@ export function computeStats(
     totalFood   += getField(sab, i, AGENT_FIELDS.FOOD);
     totalWood   += getField(sab, i, AGENT_FIELDS.WOOD);
     totalCash   += getField(sab, i, AGENT_FIELDS.CASH);
+    totalHouses += getField(sab, i, AGENT_FIELDS.HOUSES);
     wealths[i]   = getField(sab, i, AGENT_FIELDS.WEALTH);
   }
 
-  const avgFood = n > 0 ? totalFood / n : 0;
-  const avgWood = n > 0 ? totalWood / n : 0;
-  const avgCash = n > 0 ? totalCash / n : 0;
+  const avgFood   = n > 0 ? totalFood   / n : 0;
+  const avgWood   = n > 0 ? totalWood   / n : 0;
+  const avgCash   = n > 0 ? totalCash   / n : 0;
+  const avgHouses = n > 0 ? totalHouses / n : 0;
   const gini    = n > 1 ? computeGini(wealths, n) : 0;
 
   // wealthBrackets needs sorted order (computeGini already sorts internally,
@@ -89,15 +95,19 @@ export function computeStats(
   const wealthByBracket  = computeWealthByBracket(sortedWealths);
   const wealthBoundaries = computeWealthBoundaries(sortedWealths);
 
-  const { foodPrice, woodPrice, foodMoneyPrice, tradeCount, tickTradeCount } = getMarketStats();
+  const { foodPrice, woodPrice, tradeCount, tickTradeCount } = getMarketStats();
 
-  // Phase 7: inflation = tick-over-tick change in foodMoneyPrice (per stats interval)
+  // Phase 8 inflation fix: track the barter foodPrice ring (updated every trade).
+  // Phase 7 used foodMoneyPrice which is fixed at bootstrap → always showed 0.00%.
+  // The barter ring correctly captured the Phase 7 deflationary trap (food→0.189).
   let inflationRate = 0;
-  if (foodMoneyPrice > 0 && _prevFoodMoneyPrice > 0) {
-    inflationRate = (foodMoneyPrice - _prevFoodMoneyPrice) / _prevFoodMoneyPrice;
+  if (foodPrice > 0 && _prevFoodPrice > 0) {
+    inflationRate = (foodPrice - _prevFoodPrice) / _prevFoodPrice;
   }
-  _prevFoodMoneyPrice = foodMoneyPrice;
+  _prevFoodPrice = foodPrice;
+
   const { wageRate, unemploymentRate, totalWages } = getLabourStats();
+  const { rentCollected } = getHousingStats();
   const { foodHarvested } = getHarvestStats();
 
   // GDP = value of food harvested this tick * foodPrice
@@ -114,11 +124,17 @@ export function computeStats(
     roleCounts[key]++;
   }
 
+  // Phase 8: landRentIndex = total rent collected this stats interval / population.
+  // Covers both house rent and land rent (from getHousingStats).
+  // Multiplied by STATS_INTERVAL to convert per-tick to per-interval rate.
+  const landRentIndex = n > 0 ? (rentCollected / n) : 0;
+
   return {
     tick,
     population:       n,
     avgFood,
     avgWood,
+    avgHouses,
     gini,
     wealthBrackets,
     wealthByBracket,
@@ -129,7 +145,7 @@ export function computeStats(
     wageRate,
     unemploymentRate,
     labourShareOfGdp,
-    landRentIndex:    0,
+    landRentIndex,
     avgIncome,
     inflationRate,
     avgCash,

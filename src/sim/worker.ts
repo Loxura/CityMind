@@ -130,7 +130,7 @@ function handleInit(agentCount: number, seed: number, initPolicy: PolicyState, s
     prevCurrencyActive = false;
     seedRng(seed);
     const agentSeeds = seedMode === 'flat' ? undefined : MOROCCO_URBAN_SEED;
-    activeCount = initAgents(sabView, agentCount, seed, policy.landPolicy === 'free', agentSeeds);
+    activeCount = initAgents(sabView, agentCount, seed, policy.landPolicy, agentSeeds);
     tickNumber = 0;
     running = true;
 

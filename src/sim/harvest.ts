@@ -5,9 +5,10 @@ import { AGENT_FIELDS, MAP_WIDTH, MAP_HEIGHT, INITIAL_ENERGY, FOOD_DECAY_RATE_HI
 
 // Per-tick harvest totals for GDP computation in stats.ts.
 let _tickFoodHarvested = 0;
-export function resetHarvestTick(): void { _tickFoodHarvested = 0; }
-export function getHarvestStats(): { foodHarvested: number } {
-  return { foodHarvested: _tickFoodHarvested };
+let _tickWoodHarvested = 0;
+export function resetHarvestTick(): void { _tickFoodHarvested = 0; _tickWoodHarvested = 0; }
+export function getHarvestStats(): { foodHarvested: number; woodHarvested: number } {
+  return { foodHarvested: _tickFoodHarvested, woodHarvested: _tickWoodHarvested };
 }
 import { getField, setField } from './agent';
 import type { TileMap } from './map';
@@ -81,14 +82,25 @@ export function applyNetHarvest(
 
   // Harvest from destination tile — Cobb-Douglas: Output = A * (1+L)^α * Land^γ * rawYield
   const tile       = tileAt(tiles, nx, ny);
-  const rawHarvest = tile.food * 0.3;
   const land        = Math.max(1, getField(sab, idx, AGENT_FIELDS.LAND));
   const labour      = getField(sab, idx, AGENT_FIELDS.LABOUR_HIRED);
+
+  // Food harvest (FARMING production function)
+  const rawHarvest  = tile.food * 0.3;
   const cobbDouglas = 1.0 * Math.pow(1 + labour, 0.6) * Math.pow(land, 0.4);
   const harvested   = rawHarvest * cobbDouglas;
-  tile.food = Math.max(0, tile.food - rawHarvest); // tile depleted by raw amount
+  tile.food = Math.max(0, tile.food - rawHarvest);
   setField(sab, idx, AGENT_FIELDS.FOOD, getField(sab, idx, AGENT_FIELDS.FOOD) + harvested);
   _tickFoodHarvested += harvested;
+
+  // Wood harvest (Phase 8+) — agents also collect wood from tile alongside food.
+  // FORESTRY: A=1.0, labourAlpha=0.5, raw fraction=0.3. Provides renewable wood supply
+  // so builders have a material source beyond initial seed endowments.
+  const rawWoodHarvest = tile.wood * 0.3;
+  const woodHarvested  = 1.0 * Math.pow(1 + labour, 0.5) * rawWoodHarvest;
+  tile.wood = Math.max(0, tile.wood - rawWoodHarvest);
+  setField(sab, idx, AGENT_FIELDS.WOOD, getField(sab, idx, AGENT_FIELDS.WOOD) + woodHarvested);
+  _tickWoodHarvested += woodHarvested;
 
   // Consume food; restore energy proportional to food eaten.
   // Well-fed (food > 0.5): net energy +0.25/tick. Starving (food = 0): net energy -1/tick.

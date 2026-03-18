@@ -66,6 +66,49 @@ export const WOOD_SURVIVAL_BUFFER = 2;  // temporarily lowered from 5 to confirm
 export const FOOD_DECAY_RATE_HIGH = 0.992;
 export const FOOD_DECAY_RATE_MID  = 0.998;
 
+// Phase 8 — Housing and construction constants
+// HOUSE_DECAY_RATE_*: progressive decay mirroring food decay pattern.
+// Large portfolios (>10) erode at 0.5%/tick so builders must keep building.
+export const HOUSE_DECAY_RATE_HIGH = 0.995;  // houses > 10
+export const HOUSE_DECAY_RATE_MID  = 0.998;  // houses > 5
+export const HOUSE_DECAY_RATE_LOW  = 0.999;  // houses ≤ 5
+
+// SHELTER_ENERGY_PENALTY: extra energy drain per tick when agent is unsheltered.
+// Adds to the base -1/tick drain. Agents need either HOUSES≥1 or to pay rent.
+export const SHELTER_ENERGY_PENALTY = 0.5;
+
+// HOUSE_ASSET_VALUE: wealth contribution per house unit (for WEALTH field).
+// Chosen so 5 houses ≈ 100 wealth — comparable to food reserves.
+export const HOUSE_ASSET_VALUE = 20;
+
+// MAX_HOUSES_PER_AGENT: hard cap matching neural net normalisation max (input 5 max=20).
+// Construction halts when this is reached.
+export const MAX_HOUSES_PER_AGENT = 20;
+
+// CONSTRUCTION_RATE: per-tick scaling of the Cobb-Douglas batch coefficient (A=1.0).
+// PRODUCTION.CONSTRUCTION.A=1.0 is a full-project coefficient; applying it per-tick
+// at 60 tps would produce ~97 houses/min per builder. CONSTRUCTION_RATE=0.05 gives
+// ~0.08 houses/tick → cap reached in ~247 ticks — meaningful build timescale.
+export const CONSTRUCTION_RATE = 0.05;
+
+// MAX_WOOD_PER_CONSTRUCTION: wood consumed by a builder per tick (upper bound).
+export const MAX_WOOD_PER_CONSTRUCTION = 5;
+
+// WOOD_BUILD_BUFFER: builder keeps this much wood above WOOD_SURVIVAL_BUFFER before building.
+// Prevents builders from consuming all wood and starving the barter market.
+export const WOOD_BUILD_BUFFER = 4;
+
+// HOUSE_RENT_PER_TICK: cash a renter pays per tick for shelter access.
+// Landlord receives (1-taxRate) × HOUSE_RENT_PER_TICK; treasury receives taxRate portion.
+export const HOUSE_RENT_PER_TICK = 1.0;
+
+// LAND_RENT_PER_TICK: cash per land unit per tick collected by landowners (auctioned policy).
+export const LAND_RENT_PER_TICK = 0.5;
+
+// MAX_RENT_SLOTS_PER_LANDLORD: maximum renters a single landlord can service per tick.
+// Prevents a single mega-landlord from sheltering the entire nearby population.
+export const MAX_RENT_SLOTS_PER_LANDLORD = 5;
+
 // Tick loop
 export const STATS_INTERVAL = 60; // emit SimStats every N ticks
 export const TARGET_TPS      = 60; // ticks per second target

@@ -90,7 +90,7 @@ export default function App() {
 
       {/* Left column */}
       <div style={leftColStyle}>
-        <h1 style={titleStyle}>CITYMIND — Phase 7</h1>
+        <h1 style={titleStyle}>CITYMIND — Phase 8</h1>
 
         <PolicyConsole
           worker={worker}
@@ -145,6 +145,7 @@ export default function App() {
                 <Row label="Population"    value={stats.population} />
                 <Row label="Avg Food"      value={stats.avgFood.toFixed(1)} />
                 <Row label="Avg Wood"      value={stats.avgWood.toFixed(1)} />
+                <Row label="Avg Houses"    value={stats.avgHouses.toFixed(2)} />
                 <Row label="Gini"          value={stats.gini.toFixed(4)} />
                 <Row label="GDP"           value={stats.gdp.toFixed(1)} />
                 <Row label="Food Price"    value={stats.foodPrice.toFixed(3)} />
@@ -153,6 +154,7 @@ export default function App() {
                 <Row label="Unemployment"  value={(stats.unemploymentRate * 100).toFixed(1) + '%'} />
                 <Row label="Labour Share"  value={(stats.labourShareOfGdp * 100).toFixed(1) + '%'} />
                 <Row label="Avg Cash"      value={stats.avgCash.toFixed(2)} />
+                <Row label="Rent Index"    value={stats.landRentIndex.toFixed(3)} />
                 <Row label="Inflation"     value={(stats.inflationRate * 100).toFixed(2) + '%'} />
                 <Row label="Trades (tick)" value={stats.tickTradeCount} />
                 <Row label="Trades (all)"  value={stats.tradeCount} />

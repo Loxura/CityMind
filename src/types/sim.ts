@@ -8,6 +8,7 @@ export interface SimStats {
   population:       number;
   avgFood:          number;
   avgWood:          number;
+  avgHouses:        number;        // Phase 8+; 0 before
   // Phase 2+ fields — stub zero in Phase 1
   gdp:              number;
   gini:             number;

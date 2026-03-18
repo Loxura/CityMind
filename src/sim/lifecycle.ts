@@ -1,6 +1,6 @@
 // Phase 1 — aging, death, and basic reproduction.
 
-import { AGENT_FIELDS, INITIAL_ENERGY, MAP_WIDTH, MAP_HEIGHT, MAX_STABLE_POPULATION } from '../types/constants';
+import { AGENT_FIELDS, INITIAL_ENERGY, MAP_WIDTH, MAP_HEIGHT, MAX_STABLE_POPULATION, HOUSE_ASSET_VALUE } from '../types/constants';
 import { getField, setField, initAgent } from './agent';
 
 // Returns true if the agent should be removed from the active set.
@@ -16,14 +16,16 @@ export function ageAgent(sab: Float32Array, idx: number): void {
   setField(sab, idx, AGENT_FIELDS.AGE, age + 1);
 }
 
-// Update the WEALTH field: food + wood + cash (cash = 0 before Phase 7).
+// Update the WEALTH field: food + wood + cash + houses×HOUSE_ASSET_VALUE.
 // Called after harvest each tick so non-trading agents have meaningful wealth for Gini.
 // Market trades add on top of this via direct setField in market.ts.
+// Phase 8: HOUSES included at HOUSE_ASSET_VALUE per unit (houses = 0 before Phase 8).
 export function updateWealth(sab: Float32Array, idx: number): void {
-  const food = getField(sab, idx, AGENT_FIELDS.FOOD);
-  const wood = getField(sab, idx, AGENT_FIELDS.WOOD);
-  const cash = getField(sab, idx, AGENT_FIELDS.CASH);  // 0 before Phase 7
-  setField(sab, idx, AGENT_FIELDS.WEALTH, food + wood + cash);
+  const food   = getField(sab, idx, AGENT_FIELDS.FOOD);
+  const wood   = getField(sab, idx, AGENT_FIELDS.WOOD);
+  const cash   = getField(sab, idx, AGENT_FIELDS.CASH);    // 0 before Phase 7
+  const houses = getField(sab, idx, AGENT_FIELDS.HOUSES);  // 0 before Phase 8
+  setField(sab, idx, AGENT_FIELDS.WEALTH, food + wood + cash + houses * HOUSE_ASSET_VALUE);
 }
 
 // Attempt reproduction; returns the new agent index (slotIdx) if spawned,

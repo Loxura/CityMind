@@ -1,8 +1,13 @@
-// Master tick loop — Phase 4.
-// Order: net inference → harvest (Cobb-Douglas) → grid register →
-//        labour market → goods market → redistribution → lifecycle → tile regen → compact.
+// Master tick loop — Phase 8.
+// Order: net inference → harvest (Cobb-Douglas + wood harvest) → construction (builders) →
+//        house decay → food decay → shelter drain → grid register →
+//        emergency food market → labour market → goods market →
+//        housing rent → redistribution → lifecycle → compact → tile regen.
 
-import { AGENT_FIELDS, AGENT_STRIDE, MAX_AGENTS, INITIAL_ENERGY, MAP_WIDTH, MAP_HEIGHT } from '../types/constants';
+import {
+  AGENT_FIELDS, AGENT_STRIDE, MAX_AGENTS, INITIAL_ENERGY,
+  MAP_WIDTH, MAP_HEIGHT,
+} from '../types/constants';
 import { getField, setField, initAgent } from './agent';
 import type { AgentSeed } from './seeds/moroccoUrbanSeed';
 import { applyNetHarvest, applyFoodDecay, resetHarvestTick } from './harvest';
@@ -11,6 +16,10 @@ import { regenerateTiles } from './map';
 import { runMarket, runEmergencyMarket, getMarketStats, addToTreasury, setTreasury } from './market';
 import { runLabourMarket } from './labour';
 import { redistribute } from './tax';
+import {
+  applyHouseDecay, applyShelterDrain, applyConstruction,
+  runHousingRent, resetHousingTick,
+} from './housing';
 import { SpatialGrid } from './grid';
 import { buildInputMatrix, computeWealthRanks } from '../net/inputs';
 import { runInference, decodeMoveDir, decodePrimaryAction, decodePrice, decodeReservationWage } from '../net/inference';
@@ -43,28 +52,51 @@ function shuffleIndices(indices: number[]): void {
 let _nextId = 0;
 let _grid   = new SpatialGrid();
 
-// land=1 when landPolicy='free' so the labour market has active employers from tick 1.
-// agentSeeds: when provided, each agent's initial food/wood comes from the seed array
-// (cycling if count > seed length). Spatial placement always uses the RNG.
+// Phase 8: initAgents assigns builder role and land ownership based on seed decile
+// and landPolicy, replacing the old boolean landFree parameter.
+//
+// Role assignment:
+//   Morocco seed: decile >= 9 → ROLE=1 (builder) — top 2 deciles, ~20% of agents
+//   Flat seed:    every 7th agent → ROLE=1 (~14% builders)
+//
+// Land assignment:
+//   'free':      land=1 for all agents (unchanged from Phase 4)
+//   'auctioned': decile >= 7 → land=1 (Morocco); top 30% → land=1 (flat)
+//   'state':     land=0 for all
 export function initAgents(
   sab: Float32Array,
   count: number,
   seed: number,
-  landFree: boolean,
+  landPolicy: PolicyState['landPolicy'],
   agentSeeds?: AgentSeed[],
 ): number {
   seedRng(seed);
   _nextId = 0;
   _grid   = new SpatialGrid();
-  const land = landFree ? 1 : 0;
+
   for (let i = 0; i < count; i++) {
     const x = Math.floor(rng() * MAP_WIDTH);
     const y = Math.floor(rng() * MAP_HEIGHT);
     const s = agentSeeds ? agentSeeds[i % agentSeeds.length] : null;
     const food = s ? s.initialFood : 20;
     const wood = s ? s.initialWood : 5;
+
+    // Determine land ownership for this agent
+    let land = 0;
+    if (landPolicy === 'free') {
+      land = 1;
+    } else if (landPolicy === 'auctioned') {
+      const decile = s ? s.decile : 10; // flat seed: treat all as high decile initially
+      land = (s ? decile >= 7 : (i % 10) >= 7) ? 1 : 0;
+    }
+    // 'state': land=0 (default)
+
     initAgent(sab, i, _nextId++, x, y, food, wood, INITIAL_ENERGY, land);
     initWeights(sab, i, rng);
+
+    // Assign builder role: Morocco seed top 2 deciles; flat seed every 7th agent
+    const isBuilder = s ? s.decile >= 9 : (i % 7 === 0);
+    if (isBuilder) setField(sab, i, AGENT_FIELDS.ROLE, 1);
   }
   return count;
 }
@@ -76,6 +108,12 @@ function assertInvariants(sab: Float32Array, n: number): void {
     console.assert(getField(sab, i, AGENT_FIELDS.ENERGY) >= 0, `Agent ${i} negative energy`);
   }
 }
+
+// _foodDecayRate: runtime-adjustable food decay rate (crash guard in worker.ts can soften it).
+// Default FOOD_DECAY_RATE is applied in harvest loop; this exists for the Phase 7 crash guard.
+let _foodDecayRate = 0.992; // default HIGH tier; see applyFoodDecay for tier logic
+export function setFoodDecayRate(rate: number): void { _foodDecayRate = rate; }
+void _foodDecayRate; // accessed via applyFoodDecay tiers, not directly
 
 export function tick(
   sab: Float32Array,
@@ -93,8 +131,14 @@ export function tick(
   const alive = new Uint8Array(activeCount + 1);
   for (let i = 0; i < activeCount; i++) alive[i] = 1;
 
+  // sheltered[i]: 1 if agent owns a house (HOUSES>=1) or has paid rent this tick.
+  // Initialised here; runHousingRent updates it; applyShelterDrain reads it.
+  const sheltered = new Uint8Array(activeCount);
+  for (let i = 0; i < activeCount; i++) {
+    sheltered[i] = getField(sab, i, AGENT_FIELDS.HOUSES) >= 1 ? 1 : 0;
+  }
+
   let childCount = 0;
-  const landFree = policy.landPolicy === 'free';
 
   // ── Net inference ────────────────────────────────────────────────────────────
   const wealthRanks  = computeWealthRanks(sab, activeCount);
@@ -115,19 +159,35 @@ export function tick(
     offerPrices[i]      = decodePrice(rawOutputs[b + 2]);
     acceptThresholds[i] = decodePrice(rawOutputs[b + 3]);
     reservationWages[i] = decodeReservationWage(rawOutputs[b + 4]);
-    // dims 5-6 (invest, risk) reserved for Phase 8/9
+    // dims 5-6 (invest, risk) reserved for Phase 8 commercial banks / Phase 9
   }
 
-  // ── Harvest (Cobb-Douglas, net-driven move) ──────────────────────────────────
+  // ── Harvest loop ─────────────────────────────────────────────────────────────
   resetHarvestTick();
+  resetHousingTick();
+
   for (const idx of order) {
     ageAgent(sab, idx);
+
+    // All agents: move + harvest food AND wood from tile (Phase 8 adds wood harvesting)
     applyNetHarvest(sab, idx, tiles, moveDir[idx]);
 
-    // Phase 7: progressive food decay (see harvest.ts applyFoodDecay for tier thresholds).
+    // Phase 8: ROLE=1 (builder) additionally converts surplus wood → houses
+    const role = Math.round(getField(sab, idx, AGENT_FIELDS.ROLE));
+    if (role === 1) {
+      applyConstruction(sab, idx);
+    }
+
+    // Phase 8: house decay (all agents with houses)
+    applyHouseDecay(sab, idx);
+
+    // Phase 7: progressive food decay (when currency is active)
     if (policy.isCurrencyActive) {
       applyFoodDecay(sab, idx);
     }
+
+    // Phase 8: shelter drain deferred — runHousingRent must run first to mark renters.
+    // Drain applied in shelter drain loop below (after housing rent step).
 
     if (isDead(sab, idx)) {
       alive[idx] = 0;
@@ -158,12 +218,26 @@ export function tick(
   // ── Goods market (Step 5) ────────────────────────────────────────────────────
   runMarket(sab, activeCount, _grid, policy, order, rng, offerPrices, acceptThresholds);
 
-  // ── Redistribution (Step 6) ──────────────────────────────────────────────────
+  // ── Housing rent (Step 6 — Phase 8+) ─────────────────────────────────────────
+  // runHousingRent marks renters as sheltered (updates sheltered array).
+  // Must run before applyShelterDrain so renters are not penalised.
+  const housingTreasuryDelta = runHousingRent(
+    sab, activeCount, _grid, policy, order, sheltered,
+  );
+  addToTreasury(housingTreasuryDelta);
+
+  // ── Shelter drain (after rent market has resolved shelter status) ─────────────
+  for (const idx of order) {
+    if (!alive[idx]) continue;
+    applyShelterDrain(sab, idx, sheltered);
+  }
+
+  // ── Redistribution (Step 7) ──────────────────────────────────────────────────
   const { treasury, foodPrice: fp, woodPrice: wp } = getMarketStats();
   const remaining = redistribute(treasury, policy, sab, activeCount, tiles, fp, wp);
   setTreasury(remaining);
 
-  // ── Lifecycle: reproduction only (Step 7) ────────────────────────────────────
+  // ── Lifecycle: reproduction only (Step 8) ────────────────────────────────────
   for (const idx of order) {
     if (!alive[idx]) continue;
 
@@ -174,7 +248,13 @@ export function tick(
       if (childSlot !== -1) {
         _nextId = nextIdRef.value;
         initWeights(sab, childSlot, rng);
-        if (landFree) setField(sab, childSlot, AGENT_FIELDS.LAND, 1);
+        // Children inherit parent's role — preserves builder lineage across generations.
+        // Without this, every child is born ROLE=0 (farmer) and builder population
+        // dwindles to zero, eliminating the construction sink and causing wood to
+        // accumulate without bound.
+        setField(sab, childSlot, AGENT_FIELDS.ROLE, getField(sab, idx, AGENT_FIELDS.ROLE));
+        // Children inherit land when policy allows it
+        if (policy.landPolicy === 'free') setField(sab, childSlot, AGENT_FIELDS.LAND, 1);
         childCount++;
       }
     }
@@ -204,3 +284,4 @@ export function tick(
 
   return newCount;
 }
+

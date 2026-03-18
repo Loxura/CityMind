@@ -6,7 +6,7 @@
 import { useEffect, useState } from 'react';
 import { dbGetAll } from '../console/ScenarioManager';
 import type { SavedScenario } from '../console/ScenarioManager';
-import type { SimStats, SeedMode } from '../types/sim';
+import type { SimStats, SeedMode, PolicyState } from '../types/sim';
 
 function seedModeLabel(mode: SeedMode | undefined): string {
   return mode === 'flat' ? 'Flat (equal)' : 'Morocco urban 2022';
@@ -26,6 +26,10 @@ function fmtV(n: number): string {
   return n.toFixed(0);
 }
 
+function fmtPct(n: number): string {
+  return `${(n * 100).toFixed(1)}%`;
+}
+
 interface LineProps {
   data:     SimStats[];
   accessor: (d: SimStats) => number;
@@ -37,7 +41,7 @@ function MiniLine({ data, accessor, maxVal, color }: LineProps) {
   if (data.length < 2) return null;
   const iW = CW - CML - CMR;
   const iH = CH - CMT - CMB;
-  const minTick = data[0].tick;
+  const minTick  = data[0].tick;
   const tickRange = data[data.length - 1].tick - minTick || 1;
 
   const pts = data.map(d => {
@@ -50,25 +54,31 @@ function MiniLine({ data, accessor, maxVal, color }: LineProps) {
     <svg width={CW} height={CH} style={svgStyle}>
       <line x1={CML} y1={CMT} x2={CML} y2={CMT + iH} stroke="#333" />
       <line x1={CML} y1={CMT + iH} x2={CML + iW} y2={CMT + iH} stroke="#333" />
-      <text x={CML - 3} y={CMT + 4} textAnchor="end" fill="#444" fontSize={8}>{fmtV(maxVal)}</text>
-      <text x={CML - 3} y={CMT + iH} textAnchor="end" fill="#444" fontSize={8}>0</text>
-      <text x={CML} y={CH - 2} textAnchor="middle" fill="#444" fontSize={7}>{data[0].tick}</text>
-      <text x={CML + iW} y={CH - 2} textAnchor="middle" fill="#444" fontSize={7}>{data[data.length - 1].tick}</text>
+      <text x={CML - 3} y={CMT + 4}    textAnchor="end"    fill="#444" fontSize={8}>{fmtV(maxVal)}</text>
+      <text x={CML - 3} y={CMT + iH}   textAnchor="end"    fill="#444" fontSize={8}>0</text>
+      <text x={CML}     y={CH - 2}      textAnchor="middle" fill="#444" fontSize={7}>{data[0].tick}</text>
+      <text x={CML + iW} y={CH - 2}     textAnchor="middle" fill="#444" fontSize={7}>{data[data.length - 1].tick}</text>
       <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} />
     </svg>
   );
 }
 
-interface PriceProps {
-  data:   SimStats[];
-  maxVal: number;
+// Generalised two-line chart — replaces the old MiniPriceChart.
+// Used for prices (food/wood), labour (unemployment/labourShare), etc.
+interface DualLineProps {
+  data:      SimStats[];
+  accessor1: (d: SimStats) => number;
+  color1:    string;
+  accessor2: (d: SimStats) => number;
+  color2:    string;
+  maxVal:    number;
 }
 
-function MiniPriceChart({ data, maxVal }: PriceProps) {
+function MiniDualLine({ data, accessor1, color1, accessor2, color2, maxVal }: DualLineProps) {
   if (data.length < 2) return null;
   const iW = CW - CML - CMR;
   const iH = CH - CMT - CMB;
-  const minTick = data[0].tick;
+  const minTick   = data[0].tick;
   const tickRange = data[data.length - 1].tick - minTick || 1;
 
   function pts(accessor: (d: SimStats) => number): string {
@@ -83,11 +93,12 @@ function MiniPriceChart({ data, maxVal }: PriceProps) {
     <svg width={CW} height={CH} style={svgStyle}>
       <line x1={CML} y1={CMT} x2={CML} y2={CMT + iH} stroke="#333" />
       <line x1={CML} y1={CMT + iH} x2={CML + iW} y2={CMT + iH} stroke="#333" />
-      <text x={CML - 3} y={CMT + 4} textAnchor="end" fill="#444" fontSize={8}>{fmtV(maxVal)}</text>
-      <text x={CML} y={CH - 2} textAnchor="middle" fill="#444" fontSize={7}>{data[0].tick}</text>
-      <text x={CML + iW} y={CH - 2} textAnchor="middle" fill="#444" fontSize={7}>{data[data.length - 1].tick}</text>
-      <polyline points={pts(d => d.foodPrice)} fill="none" stroke="#e0a040" strokeWidth={1.5} />
-      <polyline points={pts(d => d.woodPrice)} fill="none" stroke="#60c0e0" strokeWidth={1.5} />
+      <text x={CML - 3} y={CMT + 4}  textAnchor="end"    fill="#444" fontSize={8}>{fmtV(maxVal)}</text>
+      <text x={CML - 3} y={CMT + iH} textAnchor="end"    fill="#444" fontSize={8}>0</text>
+      <text x={CML}      y={CH - 2}   textAnchor="middle" fill="#444" fontSize={7}>{data[0].tick}</text>
+      <text x={CML + iW} y={CH - 2}   textAnchor="middle" fill="#444" fontSize={7}>{data[data.length - 1].tick}</text>
+      <polyline points={pts(accessor1)} fill="none" stroke={color1} strokeWidth={1.5} />
+      <polyline points={pts(accessor2)} fill="none" stroke={color2} strokeWidth={1.5} />
     </svg>
   );
 }
@@ -108,9 +119,9 @@ function MiniHistogram({ brackets, maxVal, color }: HistProps) {
     <svg width={CW} height={CH} style={svgStyle}>
       <line x1={CML} y1={CMT} x2={CML} y2={CMT + iH} stroke="#333" />
       <line x1={CML} y1={CMT + iH} x2={CML + iW} y2={CMT + iH} stroke="#333" />
-      <text x={CML - 3} y={CMT + 4} textAnchor="end" fill="#444" fontSize={8}>{fmtV(maxVal)}</text>
-      <text x={CML} y={CH - 2} textAnchor="middle" fill="#444" fontSize={7}>poor</text>
-      <text x={CML + iW} y={CH - 2} textAnchor="middle" fill="#444" fontSize={7}>rich</text>
+      <text x={CML - 3} y={CMT + 4}  textAnchor="end"    fill="#444" fontSize={8}>{fmtV(maxVal)}</text>
+      <text x={CML}      y={CH - 2}   textAnchor="middle" fill="#444" fontSize={7}>poor</text>
+      <text x={CML + iW} y={CH - 2}   textAnchor="middle" fill="#444" fontSize={7}>rich</text>
       {brackets.map((val, i) => {
         const barH = maxVal > 0 ? (val / maxVal) * iH : 0;
         const x = CML + i * barW + 1;
@@ -140,9 +151,9 @@ function MiniScatter({ data, color }: ScatterProps) {
     <svg width={CW} height={CH} style={svgStyle}>
       <line x1={CML} y1={CMT} x2={CML} y2={CMT + iH} stroke="#333" />
       <line x1={CML} y1={CMT + iH} x2={CML + iW} y2={CMT + iH} stroke="#333" />
-      <text x={CML - 3} y={CMT + 4} textAnchor="end" fill="#444" fontSize={7}>{MAX_POP}</text>
-      <text x={CML} y={CH - 2} textAnchor="middle" fill="#444" fontSize={7}>0</text>
-      <text x={CML + iW} y={CH - 2} textAnchor="middle" fill="#444" fontSize={7}>Gini 1</text>
+      <text x={CML - 3} y={CMT + 4}  textAnchor="end"    fill="#444" fontSize={7}>{MAX_POP}</text>
+      <text x={CML}      y={CH - 2}   textAnchor="middle" fill="#444" fontSize={7}>0</text>
+      <text x={CML + iW} y={CH - 2}   textAnchor="middle" fill="#444" fontSize={7}>Gini 1</text>
       {data.map((d, i) => {
         const x = CML + Math.min(1, Math.max(0, d.gini)) * iW;
         const y = CMT + iH - Math.min(1, d.population / MAX_POP) * iH;
@@ -158,23 +169,71 @@ function MiniScatter({ data, color }: ScatterProps) {
 // ── Summary computation ────────────────────────────────────────────────────────
 
 interface Summary {
-  finalGini:     number;
-  finalPop:      number;
-  avgGdp:        number;
-  peakTradeTick: number;
-  runLength:     number;
+  finalGini:        number;
+  finalPop:         number;
+  avgGdp:           number;
+  peakTradeTick:    number;
+  totalTrades:      number;
+  runLength:        number;
+  finalUnemployment: number;
+  avgWage:          number;
+  avgLabourShare:   number;
+  finalAvgHouses:   number;
+  finalAvgCash:     number;
+  finalRentIndex:   number;
 }
 
 function computeSummary(hist: SimStats[]): Summary {
-  if (hist.length === 0) return { finalGini: 0, finalPop: 0, avgGdp: 0, peakTradeTick: 0, runLength: 0 };
-  const last = hist[hist.length - 1];
-  return {
-    finalGini:     last.gini,
-    finalPop:      last.population,
-    avgGdp:        hist.reduce((s, d) => s + d.gdp, 0) / hist.length,
-    peakTradeTick: Math.max(...hist.map(d => d.tickTradeCount)),
-    runLength:     last.tick,
+  if (hist.length === 0) return {
+    finalGini: 0, finalPop: 0, avgGdp: 0, peakTradeTick: 0, totalTrades: 0,
+    runLength: 0, finalUnemployment: 0, avgWage: 0, avgLabourShare: 0,
+    finalAvgHouses: 0, finalAvgCash: 0, finalRentIndex: 0,
   };
+  const last = hist[hist.length - 1];
+  const n    = hist.length;
+  return {
+    finalGini:         last.gini,
+    finalPop:          last.population,
+    avgGdp:            hist.reduce((s, d) => s + d.gdp,            0) / n,
+    peakTradeTick:     Math.max(...hist.map(d => d.tickTradeCount)),
+    totalTrades:       last.tradeCount,
+    runLength:         last.tick,
+    finalUnemployment: last.unemploymentRate,
+    avgWage:           hist.reduce((s, d) => s + d.wageRate,        0) / n,
+    avgLabourShare:    hist.reduce((s, d) => s + d.labourShareOfGdp, 0) / n,
+    finalAvgHouses:    last.avgHouses,
+    finalAvgCash:      last.avgCash,
+    finalRentIndex:    last.landRentIndex,
+  };
+}
+
+// Build a compact one-line policy summary string for the diff rows.
+function policyLabel(p: PolicyState | undefined): string {
+  if (!p) return '—';
+  return `${(p.taxRate * 100).toFixed(0)}%`;
+}
+
+function redistributionLabel(p: PolicyState | undefined): string {
+  if (!p) return '—';
+  const r = p.redistribution;
+  if (r === 'ubi')             return `UBI (×${p.ubiAmount.toFixed(2)})`;
+  if (r === 'targeted_welfare') return 'Targeted welfare';
+  if (r === 'public_goods')     return 'Public goods';
+  if (r === 'infrastructure')   return 'Infrastructure';
+  return 'None';
+}
+
+function currencyLabel(p: PolicyState | undefined): string {
+  if (!p) return '—';
+  return p.isCurrencyActive
+    ? `ON  rate ${(p.centralBankRate * 100).toFixed(1)}%`
+    : 'OFF';
+}
+
+function landLabel(p: PolicyState | undefined): string {
+  if (!p) return '—';
+  const minW = p.minWage > 0 ? `  minwage ${p.minWage.toFixed(1)}` : '';
+  return `${p.landPolicy}${minW}`;
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
@@ -184,7 +243,6 @@ export function ScenarioComparison({ savedRunCount }: Props) {
   const [nameA, setNameA] = useState('');
   const [nameB, setNameB] = useState('');
 
-  // Reload whenever a new run is saved
   useEffect(() => {
     dbGetAll().then(all => {
       const withHistory = all
@@ -205,7 +263,6 @@ export function ScenarioComparison({ savedRunCount }: Props) {
   const runA = runs.find(r => r.name === nameA);
   const runB = runs.find(r => r.name === nameB);
 
-  // Trim both histories to shared tick range
   function alignedHistory(hist: SimStats[], sharedTicks: number): SimStats[] {
     return hist.slice(0, sharedTicks);
   }
@@ -220,7 +277,6 @@ export function ScenarioComparison({ savedRunCount }: Props) {
     histB = alignedHistory(runB.history, sharedTicks);
   }
 
-  // Shared y-axis maxima
   function sharedMax(accessor: (d: SimStats) => number): number {
     if (!histA.length || !histB.length) return 1;
     return Math.max(
@@ -230,14 +286,19 @@ export function ScenarioComparison({ savedRunCount }: Props) {
     );
   }
 
-  const maxGini     = 1;
-  const maxPop      = sharedMax(d => d.population);
-  const maxGdp      = sharedMax(d => d.gdp);
-  const maxPrice    = sharedMax(d => Math.max(d.foodPrice, d.woodPrice));
-  const maxBrackets = runA && runB
+  const maxGini       = 1;
+  const maxPop        = sharedMax(d => d.population);
+  const maxGdp        = sharedMax(d => d.gdp);
+  const maxPrice      = sharedMax(d => Math.max(d.foodPrice, d.woodPrice));
+  const maxHouses     = sharedMax(d => d.avgHouses);
+  const maxCash       = sharedMax(d => d.avgCash);
+  // Labour chart: unemployment and labourShare are both 0–1 fractions — fixed axis.
+  const maxLabour     = 1;
+
+  const maxWealthHeld = runA && runB
     ? Math.max(
-        Math.max(...(runA.history.at(-1)?.wealthBrackets ?? [1])),
-        Math.max(...(runB.history.at(-1)?.wealthBrackets ?? [1])),
+        Math.max(...(runA.history.at(-1)?.wealthByBracket ?? [1])),
+        Math.max(...(runB.history.at(-1)?.wealthByBracket ?? [1])),
         1,
       )
     : 1;
@@ -262,6 +323,9 @@ export function ScenarioComparison({ savedRunCount }: Props) {
     a.click();
     URL.revokeObjectURL(url);
   }
+
+  // For policy diff rows: highlight if A ≠ B
+  const policyDiffers = (a: string, b: string) => a !== b;
 
   return (
     <div style={wrapStyle}>
@@ -301,12 +365,51 @@ export function ScenarioComparison({ savedRunCount }: Props) {
               </tr>
             </thead>
             <tbody>
-              <SummaryRow label="Starting conditions" a={seedModeLabel(runA.seedMode)} b={seedModeLabel(runB.seedMode)} highlight={runA.seedMode !== runB.seedMode} />
-              <SummaryRow label="Final Gini"      a={sumA!.finalGini.toFixed(3)}     b={sumB!.finalGini.toFixed(3)} />
-              <SummaryRow label="Final Pop"       a={sumA!.finalPop.toString()}       b={sumB!.finalPop.toString()} />
-              <SummaryRow label="Avg GDP"         a={sumA!.avgGdp.toFixed(1)}         b={sumB!.avgGdp.toFixed(1)} />
-              <SummaryRow label="Peak trade/tick" a={sumA!.peakTradeTick.toString()}  b={sumB!.peakTradeTick.toString()} />
-              <SummaryRow label="Run length"      a={`${sumA!.runLength} ticks`}     b={`${sumB!.runLength} ticks`} />
+              {/* ── Starting conditions ── */}
+              <SectionDivider label="STARTING CONDITIONS" />
+              <SummaryRow
+                label="Seed"
+                a={seedModeLabel(runA.seedMode)}
+                b={seedModeLabel(runB.seedMode)}
+                highlight={runA.seedMode !== runB.seedMode}
+                highlightMsg="⚠ not comparable"
+              />
+
+              {/* ── Policy settings ── */}
+              <SectionDivider label="POLICY" />
+              {(() => {
+                const tA = policyLabel(runA.policy);
+                const tB = policyLabel(runB.policy);
+                const rA = redistributionLabel(runA.policy);
+                const rB = redistributionLabel(runB.policy);
+                const cA = currencyLabel(runA.policy);
+                const cB = currencyLabel(runB.policy);
+                const lA = landLabel(runA.policy);
+                const lB = landLabel(runB.policy);
+                return (
+                  <>
+                    <SummaryRow label="Tax rate"       a={tA} b={tB} highlight={policyDiffers(tA, tB)} />
+                    <SummaryRow label="Redistribution" a={rA} b={rB} highlight={policyDiffers(rA, rB)} />
+                    <SummaryRow label="Currency"       a={cA} b={cB} highlight={policyDiffers(cA, cB)} />
+                    <SummaryRow label="Land / min wage" a={lA} b={lB} highlight={policyDiffers(lA, lB)} />
+                  </>
+                );
+              })()}
+
+              {/* ── Outcome metrics ── */}
+              <SectionDivider label="OUTCOMES" />
+              <SummaryRow label="Final Gini"          a={sumA!.finalGini.toFixed(3)}                 b={sumB!.finalGini.toFixed(3)} />
+              <SummaryRow label="Final Pop"           a={sumA!.finalPop.toString()}                  b={sumB!.finalPop.toString()} />
+              <SummaryRow label="Avg GDP"             a={sumA!.avgGdp.toFixed(1)}                    b={sumB!.avgGdp.toFixed(1)} />
+              <SummaryRow label="Final Unemployment"  a={fmtPct(sumA!.finalUnemployment)}            b={fmtPct(sumB!.finalUnemployment)} />
+              <SummaryRow label="Avg Wage"            a={sumA!.avgWage.toFixed(2)}                   b={sumB!.avgWage.toFixed(2)} />
+              <SummaryRow label="Avg Labour Share"    a={fmtPct(sumA!.avgLabourShare)}               b={fmtPct(sumB!.avgLabourShare)} />
+              <SummaryRow label="Final Avg Houses"    a={sumA!.finalAvgHouses.toFixed(2)}            b={sumB!.finalAvgHouses.toFixed(2)} />
+              <SummaryRow label="Final Avg Cash"      a={sumA!.finalAvgCash.toFixed(2)}              b={sumB!.finalAvgCash.toFixed(2)} />
+              <SummaryRow label="Final Rent Index"    a={sumA!.finalRentIndex.toFixed(3)}            b={sumB!.finalRentIndex.toFixed(3)} />
+              <SummaryRow label="Peak trade/tick"     a={sumA!.peakTradeTick.toString()}             b={sumB!.peakTradeTick.toString()} />
+              <SummaryRow label="Total trades"        a={sumA!.totalTrades.toLocaleString()}         b={sumB!.totalTrades.toLocaleString()} />
+              <SummaryRow label="Run length"          a={`${sumA!.runLength} ticks`}                b={`${sumB!.runLength} ticks`} />
             </tbody>
           </table>
 
@@ -328,14 +431,41 @@ export function ScenarioComparison({ savedRunCount }: Props) {
               <MiniLine data={histB} accessor={d => d.gdp}        maxVal={maxGdp}  color="#3cc8a0" />
             </ChartPair>
 
-            <ChartPair label="PRICES (food amber / wood cyan)">
-              <MiniPriceChart data={histA} maxVal={maxPrice} />
-              <MiniPriceChart data={histB} maxVal={maxPrice} />
+            <ChartPair label="HOUSING (avg houses)">
+              <MiniLine data={histA} accessor={d => d.avgHouses}  maxVal={maxHouses} color="#7c5cfc" />
+              <MiniLine data={histB} accessor={d => d.avgHouses}  maxVal={maxHouses} color="#3cc8a0" />
             </ChartPair>
 
-            <ChartPair label="WEALTH DISTRIBUTION (final state)">
-              <MiniHistogram brackets={runA.history.at(-1)?.wealthBrackets ?? []} maxVal={maxBrackets} color="#7c5cfc" />
-              <MiniHistogram brackets={runB.history.at(-1)?.wealthBrackets ?? []} maxVal={maxBrackets} color="#3cc8a0" />
+            <ChartPair label="CASH / LIQUIDITY (avg cash)">
+              <MiniLine data={histA} accessor={d => d.avgCash}    maxVal={maxCash}   color="#7c5cfc" />
+              <MiniLine data={histB} accessor={d => d.avgCash}    maxVal={maxCash}   color="#3cc8a0" />
+            </ChartPair>
+
+            <ChartPair label="PRICES (food amber / wood cyan)">
+              <MiniDualLine data={histA}
+                accessor1={d => d.foodPrice} color1="#e0a040"
+                accessor2={d => d.woodPrice} color2="#60c0e0"
+                maxVal={maxPrice} />
+              <MiniDualLine data={histB}
+                accessor1={d => d.foodPrice} color1="#e0a040"
+                accessor2={d => d.woodPrice} color2="#60c0e0"
+                maxVal={maxPrice} />
+            </ChartPair>
+
+            <ChartPair label="LABOUR (unemployment orange / labour share teal)">
+              <MiniDualLine data={histA}
+                accessor1={d => d.unemploymentRate}  color1="#f0a040"
+                accessor2={d => d.labourShareOfGdp}  color2="#3cc8a0"
+                maxVal={maxLabour} />
+              <MiniDualLine data={histB}
+                accessor1={d => d.unemploymentRate}  color1="#f0a040"
+                accessor2={d => d.labourShareOfGdp}  color2="#3cc8a0"
+                maxVal={maxLabour} />
+            </ChartPair>
+
+            <ChartPair label="WEALTH HELD BY DECILE — final (Piketty view)">
+              <MiniHistogram brackets={runA.history.at(-1)?.wealthByBracket ?? []} maxVal={maxWealthHeld} color="#7c5cfc" />
+              <MiniHistogram brackets={runB.history.at(-1)?.wealthByBracket ?? []} maxVal={maxWealthHeld} color="#3cc8a0" />
             </ChartPair>
 
             <ChartPair label="POLICY IMPACT (Gini × Pop trail)">
@@ -361,7 +491,19 @@ function ChartPair({ label, children }: { label: string; children: React.ReactNo
   );
 }
 
-function SummaryRow({ label, a, b, highlight }: { label: string; a: string; b: string; highlight?: boolean }) {
+function SectionDivider({ label }: { label: string }) {
+  return (
+    <tr>
+      <td colSpan={3} style={sectionDividerStyle}>{label}</td>
+    </tr>
+  );
+}
+
+function SummaryRow({
+  label, a, b, highlight = false, highlightMsg = '⚠ differs',
+}: {
+  label: string; a: string; b: string; highlight?: boolean; highlightMsg?: string;
+}) {
   const warningStyle: React.CSSProperties = highlight
     ? { color: '#e05555', fontSize: 9, letterSpacing: 0.5, paddingLeft: 4 }
     : {};
@@ -369,7 +511,7 @@ function SummaryRow({ label, a, b, highlight }: { label: string; a: string; b: s
     <tr style={summaryRowStyle}>
       <td style={summaryLabelCellStyle}>
         {label}
-        {highlight && <span style={warningStyle}> ⚠ not comparable</span>}
+        {highlight && <span style={warningStyle}> {highlightMsg}</span>}
       </td>
       <td style={{ ...summaryValCellStyle, color: '#7c5cfc' }}>{a}</td>
       <td style={{ ...summaryValCellStyle, color: '#3cc8a0' }}>{b}</td>
@@ -461,8 +603,17 @@ const thStyle: React.CSSProperties = {
   fontSize:      10,
 };
 
+const sectionDividerStyle: React.CSSProperties = {
+  color:         '#333',
+  fontSize:      9,
+  letterSpacing: 2,
+  paddingTop:    10,
+  paddingBottom: 3,
+  borderBottom:  '1px solid #1a1a1a',
+};
+
 const summaryRowStyle: React.CSSProperties = {
-  borderBottom: '1px solid #1a1a1a',
+  borderBottom: '1px solid #111',
 };
 
 const summaryLabelCellStyle: React.CSSProperties = {
