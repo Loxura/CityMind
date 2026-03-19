@@ -16,9 +16,11 @@ export function PolicyImpactScatter({ history }: Props) {
   const iW = W - ML - MR;
   const iH = H - MT - MB;
 
+  const maxPop = Math.max(...history.map(d => d.population ?? 0), MAX_POP);
+
   function toXY(d: SimStats): [number, number] {
-    const x = ML + Math.min(1, Math.max(0, d.gini)) * iW;
-    const y = MT + iH - Math.min(1, d.population / MAX_POP) * iH;
+    const x = ML + Math.min(1, Math.max(0, d.gini ?? 0)) * iW;
+    const y = MT + iH - Math.min(1, (d.population ?? 0) / maxPop) * iH;
     return [x, y];
   }
 
@@ -33,7 +35,7 @@ export function PolicyImpactScatter({ history }: Props) {
         <text x={ML + iW / 2} y={H - 6} textAnchor="middle" fill="#555" fontSize={8}>Gini 0.5</text>
         <text x={ML + iW} y={H - 6} textAnchor="middle" fill="#555" fontSize={8}>1</text>
 
-        <text x={ML - 4} y={MT + 4} textAnchor="end" fill="#555" fontSize={8}>{MAX_POP}</text>
+        <text x={ML - 4} y={MT + 4} textAnchor="end" fill="#555" fontSize={8}>{maxPop}</text>
         <text x={ML - 4} y={MT + iH} textAnchor="end" fill="#555" fontSize={8}>0</text>
 
         <line x1={ML + iW / 2} y1={MT} x2={ML + iW / 2} y2={MT + iH} stroke="#1e1e1e" />

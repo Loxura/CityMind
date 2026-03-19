@@ -20,7 +20,7 @@ export function PriceChart({ history, events }: Props) {
   const maxTick = history[history.length - 1].tick;
   const tickRange = maxTick - minTick || 1;
 
-  const maxPrice = Math.max(...history.map(d => Math.max(d.foodPrice, d.woodPrice)), 0.001);
+  const maxPrice = Math.max(...history.map(d => Math.max(d.foodPrice ?? 0, d.woodPrice ?? 0)), 0.001);
 
   function toPoints(accessor: (d: SimStats) => number): string {
     return history.map(d => {
@@ -36,9 +36,9 @@ export function PriceChart({ history, events }: Props) {
     <div style={wrapStyle}>
       <div style={titleStyle}>
         PRICES —{' '}
-        <span style={{ color: '#e0a040' }}>F {last.foodPrice.toFixed(1)}</span>
+        <span style={{ color: '#e0a040' }}>F {(last.foodPrice ?? 0).toFixed(1)}</span>
         {' '}
-        <span style={{ color: '#60c0e0' }}>W {last.woodPrice.toFixed(1)}</span>
+        <span style={{ color: '#60c0e0' }}>W {(last.woodPrice ?? 0).toFixed(1)}</span>
       </div>
       <svg width={W} height={H} style={svgStyle}>
         <line x1={ML} y1={MT} x2={ML} y2={MT + iH} stroke="#333" />

@@ -19,12 +19,12 @@ export function StockIndexChart({ history, events }: Props) {
   const maxTick = history[history.length - 1].tick;
   const tickRange = maxTick - minTick || 1;
 
-  const maxVal = Math.max(...history.map(d => d.stockIndex), 0.001);
-  const lastVal = history[history.length - 1].stockIndex;
+  const maxVal = Math.max(...history.map(d => d.stockIndex ?? 0), 0.001);
+  const lastVal = history[history.length - 1].stockIndex ?? 0;
 
   const points = history.map(d => {
     const x = ML + ((d.tick - minTick) / tickRange) * iW;
-    const y = MT + iH - (d.stockIndex / maxVal) * iH;
+    const y = MT + iH - ((d.stockIndex ?? 0) / maxVal) * iH;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
 

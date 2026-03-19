@@ -19,11 +19,11 @@ export function GiniChart({ history, events }: Props) {
 
   const points = history.map(d => {
     const x = ML + ((d.tick - minTick) / tickRange) * iW;
-    const y = MT + iH - Math.min(1, Math.max(0, d.gini)) * iH;
+    const y = MT + iH - Math.min(1, Math.max(0, d.gini ?? 0)) * iH;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
 
-  const lastGini = history[history.length - 1].gini.toFixed(3);
+  const lastGini = (history[history.length - 1].gini ?? 0).toFixed(3);
 
   return (
     <div style={wrapStyle}>

@@ -14,7 +14,7 @@ export interface BankState {
 let _bank: BankState = {
   deposits:           0,
   loansOutstanding:   0,
-  capitalBuffer:      500,
+  capitalBuffer:      2000,
   nonPerformingLoans: 0,
   isSolvent:          true,
 };
@@ -25,7 +25,7 @@ export function resetBankState(): void {
   _bank = {
     deposits:           0,
     loansOutstanding:   0,
-    capitalBuffer:      500,
+    capitalBuffer:      2000,
     nonPerformingLoans: 0,
     isSolvent:          true,
   };
@@ -43,7 +43,7 @@ export function defaultPolicy(): PolicyState {
     isCurrencyActive:    false,
     centralBankRate:     0,
     moneySupplyGrowth:   0,
-    reserveRequirement:  0,
+    reserveRequirement:  0.10,
     capitalGainsTax:     0,
     marginLendingLimit:  0,
   };

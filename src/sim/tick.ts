@@ -240,6 +240,21 @@ export function tick(
   const remaining = redistribute(treasury, policy, sab, activeCount, tiles, fp, wp);
   setTreasury(remaining);
 
+  // ── Invest-signal diagnostic (ticks 500, 1000, 2000) ─────────────────────────
+  if (tickNumber === 500 || tickNumber === 1000 || tickNumber === 2000) {
+    let below05 = 0, between0507 = 0, above07 = 0;
+    for (let i = 0; i < activeCount; i++) {
+      const s = investSignals[i];
+      if (s > 0.7) above07++;
+      else if (s >= 0.5) between0507++;
+      else below05++;
+    }
+    console.log(
+      `[tick ${tickNumber}] invest_signal dist: <0.5=${below05} 0.5-0.7=${between0507} >0.7=${above07}` +
+      ` (n=${activeCount}, pct_above_threshold=${(above07/activeCount*100).toFixed(1)}%)`
+    );
+  }
+
   // ── Lending (Step 8.5 — Phase 9+) ────────────────────────────────────────────
   runLending(sab, activeCount, order, policy, investSignals, fp, wp);
 

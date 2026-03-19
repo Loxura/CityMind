@@ -16,6 +16,7 @@ import { createMap } from './map';
 import { computeStats, resetStats } from './stats';
 import { resetMarket, activateCurrency, getMarketStats } from './market';
 import { defaultPolicy, applyPolicyPatch, resetBankState } from './policy';
+import { resetLendingActiveTick } from './bank';
 import { getField } from './agent';
 import EvoWorkerCtor from '../evolution/worker.ts?worker';
 import * as tf from '@tensorflow/tfjs';
@@ -101,6 +102,23 @@ function doTick(): void {
     console.log(`[SimWorker] tick=${stats.tick} pop=${stats.population} avgFood=${stats.avgFood.toFixed(2)} avgWood=${stats.avgWood.toFixed(2)} gini=${stats.gini.toFixed(3)} foodPrice=${stats.foodPrice.toFixed(3)} trades=${stats.tradeCount} tickTrades=${stats.tickTradeCount}`);
     const msg: SimToMain = { type: 'STATS', stats };
     self.postMessage(msg);
+
+    // ── Emergency market diagnostic ──────────────────────────────────────────
+    // Three signals that distinguish "market broken" from "no sellers nearby":
+    //   emergencyTrades  — food purchases that actually executed this tick
+    //   foodMoneyPrice   — cash cost per 1 food; if too high agents can't afford to buy
+    //   cashRichStarving — agents with cash > foodMoneyPrice AND food < FOOD_SURVIVAL_BUFFER
+    //                      (want to buy but something stops them)
+    const { emergencyTradeCount: emTrades, foodMoneyPrice: fmp } = getMarketStats();
+    let cashRichStarving = 0;
+    if (fmp > 0) {
+      for (let i = 0; i < activeCount; i++) {
+        const food = getField(sabView, i, AGENT_FIELDS.FOOD);
+        const cash = getField(sabView, i, AGENT_FIELDS.CASH);
+        if (food < 10 && cash >= fmp) cashRichStarving++;
+      }
+    }
+    console.log(`[DiagEM] tick=${tickNumber} emergencyTrades=${emTrades} foodMoneyPrice=${fmp.toFixed(3)} cashRichStarving=${cashRichStarving}`);
   }
 
   // GPU memory monitor — must be flat after tick 100 if disposal is working.
@@ -128,6 +146,7 @@ function handleInit(agentCount: number, seed: number, initPolicy: PolicyState, s
     resetMarket();
     resetStats();
     resetBankState();
+    resetLendingActiveTick();
     prevCurrencyActive = false;
     seedRng(seed);
     const agentSeeds = seedMode === 'flat' ? undefined : MOROCCO_URBAN_SEED;

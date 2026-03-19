@@ -22,7 +22,8 @@ export function WealthHistogram({ stats }: Props) {
 
   const data = view === 'agents' ? stats.wealthBrackets : stats.wealthByBracket;
   const maxVal = Math.max(...data, 1);
-  const barW = iW / BARS;
+  const barCount = data.length || BARS;
+  const barW = iW / barCount;
 
   return (
     <div style={wrapStyle}>
@@ -69,7 +70,7 @@ export function WealthHistogram({ stats }: Props) {
           const barH = (val / maxVal) * iH;
           const x = ML + i * barW + 1;
           const y = MT + iH - barH;
-          const t = i / (BARS - 1);
+          const t = i / Math.max(1, barCount - 1);
           const r = Math.round(124 * (1 - t) + 60 * t);
           const g = Math.round(92  * (1 - t) + 200 * t);
           const b = Math.round(252 * (1 - t) + 160 * t);

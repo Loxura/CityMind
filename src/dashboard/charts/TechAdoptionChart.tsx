@@ -21,11 +21,11 @@ export function TechAdoptionChart({ history, events }: Props) {
   const maxTick = history[history.length - 1].tick;
   const tickRange = maxTick - minTick || 1;
 
-  const lastCount = history[history.length - 1].techsUnlocked.length;
+  const lastCount = (history[history.length - 1].techsUnlocked ?? []).length;
 
   const points = history.map(d => {
     const x = ML + ((d.tick - minTick) / tickRange) * iW;
-    const y = MT + iH - (d.techsUnlocked.length / MAX_TECHS) * iH;
+    const y = MT + iH - ((d.techsUnlocked ?? []).length / MAX_TECHS) * iH;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
 

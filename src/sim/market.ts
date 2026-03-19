@@ -26,8 +26,9 @@ let woodRingCount = 0;
 let lastWoodPrice = PRICE_SEED;
 
 export let treasury   = 0;
-let tradeCount     = 0;
-let tickTradeCount = 0;
+let tradeCount          = 0;
+let tickTradeCount      = 0;
+let emergencyTradeCount = 0; // diagnostic: reset each call to runEmergencyMarket
 
 // ── Phase 7: money prices ────────────────────────────────────────────────────
 // Bootstrapped once from barter equilibrium when isCurrencyActive first turns true.
@@ -63,8 +64,9 @@ function pushWoodPrice(price: number): void {
 export function getMarketStats(): {
   foodPrice: number; woodPrice: number; foodMoneyPrice: number;
   treasury: number; tradeCount: number; tickTradeCount: number;
+  emergencyTradeCount: number;
 } {
-  return { foodPrice: lastFoodPrice, woodPrice: lastWoodPrice, foodMoneyPrice, treasury, tradeCount, tickTradeCount };
+  return { foodPrice: lastFoodPrice, woodPrice: lastWoodPrice, foodMoneyPrice, treasury, tradeCount, tickTradeCount, emergencyTradeCount };
 }
 
 // Must be called on every INIT and RESET before the first tick.
@@ -92,6 +94,7 @@ export function resetMarket(): void {
   treasury            = 0;
   tradeCount          = 0;
   tickTradeCount      = 0;
+  emergencyTradeCount = 0;
   foodMoneyPrice      = 0;
   woodMoneyPrice      = 0;
   currencyBootstrapped = false;
@@ -133,6 +136,7 @@ export function runEmergencyMarket(
   rng: () => number,
 ): void {
   if (foodMoneyPrice <= 0) return; // currency not yet bootstrapped
+  emergencyTradeCount = 0; // reset each tick so diagnostic reflects this tick only
 
   for (const aIdx of shuffledOrder) {
     const foodA = getField(sab, aIdx, AGENT_FIELDS.FOOD);
@@ -165,6 +169,7 @@ export function runEmergencyMarket(
     treasury += taxAmt;
     tradeCount++;
     tickTradeCount++;
+    emergencyTradeCount++;
   }
 }
 

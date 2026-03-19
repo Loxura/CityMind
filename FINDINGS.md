@@ -884,3 +884,169 @@ and farmers reproduce at rates proportional to their survival fitness.
 - UBI transmission chain `tax → cash → rent → shelter → survival` becomes testable
 
 **TypeScript build:** clean (tsc --noEmit, 0 errors).
+
+---
+
+## Phase 9 — March 2026 — Commercial banks and credit cycles
+
+### Phase 9 — March 2026 — Initial implementation (v1)
+
+**Files created/modified:**
+- `src/sim/bank.ts` (NEW): `runLending()`, `getBankStats()`, default cascade
+  with house forfeit → food → wood collateral sequence
+- `src/sim/policy.ts`: `BankState` interface, `getBankState()`, `resetBankState()`,
+  initial `capitalBuffer=500`, `reserveRequirement=0`
+- `src/sim/tick.ts`: `runLending` called at step 8.5, `investSignals` decoded
+  from `output[5]`
+- `src/sim/stats.ts`: `creditToGdp` and `bankSolvency` live from `getBankStats()`
+- `src/sim/worker.ts`: `resetBankState()` on INIT and RESET
+- `src/console/controls/BankingControls.tsx` (NEW): reserve requirement slider,
+  bank status display (Solvent / Insolvent)
+- `src/console/PolicyConsole.tsx`: BankingControls wired, `reserveRequirement`
+  event label `#c060e0`
+- `src/App.tsx`: Credit/GDP and Bank solvency rows, title Phase 9
+
+---
+
+### Phase 9 — March 2026 — Accidental finding: currency-inactive benchmark (v1 run 1)
+
+**Policy:** `isCurrencyActive=false` (error), `reserveRequirement=0`, `capitalBuffer=500`.
+5000-tick run.
+
+Despite currency being off, lending fired because the `isCurrencyActive` guard was
+missing from `runLending`. Cash existed in the SAB from Morocco seed initialisation
+regardless of the currency toggle. Loans were denominated against unanchored barter
+prices.
+
+**Results:**
+- Final population: 337
+- Final Gini: 0.8462
+- Avg GDP: 2150.9
+- Bank solvency: −2.9785 (insolvent from tick ~600, frozen for remainder)
+- Credit/GDP: 0.0148
+- Role counts: 100% builders
+
+**Key finding:** Bank insolvency at tick ~600 caused 79% population collapse
+(500 → 105 agents). Economy recovered slowly over 4400 ticks with bank frozen.
+Credit market dead for remainder of run. Accidentally demonstrated that
+undercapitalised lending in an unanchored monetary system produces a crisis worse
+than no lending at all.
+
+---
+
+### Phase 9 — March 2026 — Currency-active benchmark (v1 run 2)
+
+**Policy:** `isCurrencyActive=true`, `reserveRequirement=0`, `capitalBuffer=500`.
+
+**Results:**
+- Final population: 366
+- Final Gini: 0.8551
+- Avg GDP: 1758.0
+- Bank solvency: −1.1442 (insolvent from tick ~300, frozen for remainder)
+- Credit/GDP: 0.0222
+- Peak creditToGdp: 0.1746 at tick 240
+
+**Crash sequence:** currency bootstrap → immediate lending (creditToGdp 0.17 at
+tick 60) → mass defaults by tick 300 → capitalBuffer exhausted → bank frozen for
+remaining 4700 ticks. Population: 500 → 159 in 60 ticks (68% collapse), slow
+recovery to 366.
+
+**Comparison with no-banking Phase 8 baseline (same policy, no bank):**
+
+| Metric | No banking (Phase 8) | With banking (v1) |
+|---|---|---|
+| Final population | 437 | 366 |
+| Final Gini | 0.822 | 0.855 |
+| Avg GDP | 1544 | 1758 |
+
+Banking made population worse, inequality worse, and output only marginally better.
+Classic result: undercapitalised bank in a boom produces a credit crisis worse than
+no bank. Emerged without scripting.
+
+---
+
+### Phase 9 — March 2026 — Four stabilisation fixes applied
+
+**Fix A:** `isCurrencyActive` guard added to `runLending` — bank cannot lend before
+currency is active and price-anchored.
+
+**Fix B:** `capitalBuffer` raised 500 → 2000.
+
+**Fix C:** 500-tick lending delay after currency activation — prevents tick-0 credit
+explosion, allows price stabilisation.
+
+**Fix D:** Wealth eligibility threshold raised from `>0` to `≥50`.
+
+---
+
+### Phase 9 — March 2026 — Fix overcorrection discovered (v4)
+
+**Policy:** all four fixes applied, `isCurrencyActive=true`. 5000-tick run.
+
+**Result:** `creditToGdp=0.0000` for entire run. Fix D (wealth ≥ 50) excluded the
+entire post-collapse population (~110–160 agents, mostly bottom-decile Morocco seed
+survivors). Bank solvent, `capitalBuffer` untouched, zero loans issued.
+
+**Unintended finding:** Without credit, neuroevolution maintains role diversity.
+Farmers and builders coexist stably at ~40–60% split for the full 5000 ticks.
+Builder convergence does not occur. Role monoculture (100% builders) in previous
+runs was driven by credit access, not construction advantage alone.
+
+---
+
+### Phase 9 — March 2026 — Wealth threshold lowered to 10 (v5)
+
+**Results:**
+- Final population: 493 (best Phase 9 result)
+- Final Gini: 0.8430
+- Avg GDP: 2598.7 (final tick: 3710.5)
+- Avg Houses: 2.450
+- Avg Cash: 77.24
+- Bank solvency: 1.0000 throughout
+- Credit/GDP: 0.0000 — lending still inactive
+
+Population recovered well. But `invest_signal` suppression confirmed: neuroevolution
+selects `output[5]` toward zero during the survival bottleneck (ticks 60–500). Agents
+that survived the early crash were those that did not seek credit. By tick 500 when
+the lending window opens, the entire population has evolved `invest_signal ≈ 0`.
+Bank open, willing to lend, no borrowers.
+
+v6 confirmed the same result with a different initialisation — `creditToGdp` flat 0
+across all 84 stat windows.
+
+---
+
+### Phase 9 — March 2026 — Invest_signal suppression: mechanism and implication
+
+The 500-tick lending delay creates a selection pressure against credit-seeking
+behaviour during the period when the population is most stressed. Survival fitness
+and credit-seeking fitness are anti-correlated during the bottleneck. The surviving
+gene pool has `invest_signal` evolved to near-zero, and no subsequent selection
+pressure reverses it because:
+- Loans are small (capped at 50 cash)
+- The economy functions adequately without credit
+- Builder wealth accumulation via construction does not require borrowing
+
+**Architectural conclusion:** `invest_signal` as lending trigger is structurally
+flawed for this population dynamic. The neural net cannot evolve toward a behaviour
+that is only rewarded after a 500-tick delay during which the opposite behaviour is
+selected for.
+
+**Planned fix (Phase 10 prerequisite):** Replace invest_signal threshold with a
+deterministic wealth-based probability rule (`WEALTH > 100`, 5% chance per tick).
+`output[5]` reverts to a dormant stub.
+
+---
+
+### Phase 9 — open issues carried forward
+
+- Lending trigger replacement not yet implemented (deterministic wealth-based rule)
+- Once lending is active: run clean control (Morocco seed, currency on, no tax, no
+  UBI, 5000 ticks) and confirm `bankSolvency > 0` throughout
+- Policy experiments deferred until stable control established:
+  1. Progressive tax + UBI
+  2. Flat tax + UBI with banking
+  3. Helicopter money UBI (no tax)
+  4. Low UBI rate (5–10%) — find positive marginal benefit threshold
+- `SHARES` field and `stockIndex` remain 0 (Phase 10)
+- `capitalGainsTax` and `marginLendingLimit` remain ignored (Phase 10)

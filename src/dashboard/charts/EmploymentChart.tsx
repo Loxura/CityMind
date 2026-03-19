@@ -21,14 +21,14 @@ export function EmploymentChart({ history, events }: Props) {
 
   const points = history.map(d => {
     const x = ML + ((d.tick - minTick) / tickRange) * iW;
-    const rate = Math.min(1, Math.max(0, 1 - d.unemploymentRate));
+    const rate = Math.min(1, Math.max(0, 1 - (d.unemploymentRate ?? 0)));
     const y = MT + iH - rate * iH;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
 
   return (
     <div style={wrapStyle}>
-      <div style={titleStyle}>EMPLOYMENT — {((1 - last.unemploymentRate) * 100).toFixed(1)}%</div>
+      <div style={titleStyle}>EMPLOYMENT — {((1 - (last.unemploymentRate ?? 0)) * 100).toFixed(1)}%</div>
       <svg width={W} height={H} style={svgStyle}>
         <line x1={ML} y1={MT} x2={ML} y2={MT + iH} stroke="#333" />
         <line x1={ML} y1={MT + iH} x2={ML + iW} y2={MT + iH} stroke="#333" />

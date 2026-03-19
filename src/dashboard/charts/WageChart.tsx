@@ -17,17 +17,17 @@ export function WageChart({ history, events }: Props) {
   const maxTick = history[history.length - 1].tick;
   const tickRange = maxTick - minTick || 1;
 
-  const maxWage = Math.max(...history.map(d => d.wageRate), 0.001);
+  const maxWage = Math.max(...history.map(d => d.wageRate ?? 0), 0.001);
 
   const points = history.map(d => {
     const x = ML + ((d.tick - minTick) / tickRange) * iW;
-    const y = MT + iH - (d.wageRate / maxWage) * iH;
+    const y = MT + iH - ((d.wageRate ?? 0) / maxWage) * iH;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
 
   return (
     <div style={wrapStyle}>
-      <div style={titleStyle}>WAGE RATE — {history[history.length - 1].wageRate.toFixed(2)}</div>
+      <div style={titleStyle}>WAGE RATE — {(history[history.length - 1].wageRate ?? 0).toFixed(2)}</div>
       <svg width={W} height={H} style={svgStyle}>
         <line x1={ML} y1={MT} x2={ML} y2={MT + iH} stroke="#333" />
         <line x1={ML} y1={MT + iH} x2={ML + iW} y2={MT + iH} stroke="#333" />

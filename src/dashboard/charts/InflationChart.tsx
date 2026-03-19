@@ -21,7 +21,7 @@ export function InflationChart({ history, events }: Props) {
   const maxTick = history[history.length - 1].tick;
   const tickRange = maxTick - minTick || 1;
 
-  const rates = history.map(d => d.inflationRate);
+  const rates = history.map(d => d.inflationRate ?? 0);
   const maxAbs = Math.max(...rates.map(Math.abs), 0.001);
   const yMax =  maxAbs;
   const yMin = -maxAbs;
@@ -31,12 +31,12 @@ export function InflationChart({ history, events }: Props) {
 
   const points = history.map(d => {
     const x = ML + ((d.tick - minTick) / tickRange) * iW;
-    const y = toY(d.inflationRate);
+    const y = toY(d.inflationRate ?? 0);
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
 
   const zeroY = toY(0);
-  const latest = history[history.length - 1].inflationRate;
+  const latest = history[history.length - 1].inflationRate ?? 0;
 
   return (
     <div style={wrapStyle}>

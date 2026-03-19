@@ -14,6 +14,13 @@ import { addToTreasury } from './market';
 import type { BankState } from './policy';
 import type { PolicyState } from '../types/sim';
 
+// No activation delay — lending starts as soon as currency is active.
+// Early loan cap (WEALTH*0.1, max 10) limits initial credit explosion without
+// training neuroevolution to suppress invest_signal.
+export function resetLendingActiveTick(): void {
+  // kept for call-site compatibility; no-op now that the delay is removed
+}
+
 function checkSolvency(bank: BankState, reserveRequirement: number): void {
   bank.isSolvent =
     bank.loansOutstanding === 0 ||
@@ -76,6 +83,9 @@ export function runLending(
   foodPrice: number,
   woodPrice: number,
 ): void {
+  // Fix A: banking without currency has no price anchor — skip entirely.
+  if (!policy.isCurrencyActive) return;
+
   const bank = getBankState();
   let treasuryDelta = 0;
 
@@ -115,10 +125,10 @@ export function runLending(
   for (const idx of order) {
     if (investSignals[idx] <= 0.7)                      continue; // net not signalling
     if (getField(sab, idx, AGENT_FIELDS.DEBT) !== 0)    continue; // one loan at a time
-    if (getField(sab, idx, AGENT_FIELDS.WEALTH) <= 0)   continue; // no collateral
+    if (getField(sab, idx, AGENT_FIELDS.WEALTH) <= 10)   continue; // Fix D: exclude bottom-decile subsistence agents
     if (!bank.isSolvent)                                 continue; // bank frozen
 
-    const loanAmount = Math.min(getField(sab, idx, AGENT_FIELDS.WEALTH) * 0.5, 50);
+    const loanAmount = Math.min(getField(sab, idx, AGENT_FIELDS.WEALTH) * 0.1, 10);
     setField(sab, idx, AGENT_FIELDS.CASH, getField(sab, idx, AGENT_FIELDS.CASH) + loanAmount);
     setField(sab, idx, AGENT_FIELDS.DEBT, loanAmount);
     bank.loansOutstanding += loanAmount;

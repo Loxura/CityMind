@@ -20,19 +20,19 @@ export function CreditGdpChart({ history, events }: Props) {
   const maxTick = history[history.length - 1].tick;
   const tickRange = maxTick - minTick || 1;
 
-  const maxCredit = Math.max(...history.map(d => d.creditToGdp), 0.001);
-  const lastCredit   = history[history.length - 1].creditToGdp;
-  const lastSolvency = history[history.length - 1].bankSolvency;
+  const maxCredit = Math.max(...history.map(d => d.creditToGdp ?? 0), 0.001);
+  const lastCredit   = history[history.length - 1].creditToGdp ?? 0;
+  const lastSolvency = history[history.length - 1].bankSolvency ?? 1;
 
   const creditPoints = history.map(d => {
     const x = ML + ((d.tick - minTick) / tickRange) * iW;
-    const y = MT + iH - (d.creditToGdp / maxCredit) * iH;
+    const y = MT + iH - ((d.creditToGdp ?? 0) / maxCredit) * iH;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
 
   const solvencyPoints = history.map(d => {
     const x = ML + ((d.tick - minTick) / tickRange) * iW;
-    const y = MT + iH - d.bankSolvency * iH;
+    const y = MT + iH - (d.bankSolvency ?? 1) * iH;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
 

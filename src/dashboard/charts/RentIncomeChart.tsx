@@ -19,12 +19,12 @@ export function RentIncomeChart({ history, events }: Props) {
   const maxTick = history[history.length - 1].tick;
   const tickRange = maxTick - minTick || 1;
 
-  const maxVal = Math.max(...history.map(d => d.landRentIndex), 0.001);
-  const lastVal = history[history.length - 1].landRentIndex;
+  const maxVal = Math.max(...history.map(d => d.landRentIndex ?? 0), 0.001);
+  const lastVal = history[history.length - 1].landRentIndex ?? 0;
 
   const points = history.map(d => {
     const x = ML + ((d.tick - minTick) / tickRange) * iW;
-    const y = MT + iH - (d.landRentIndex / maxVal) * iH;
+    const y = MT + iH - ((d.landRentIndex ?? 0) / maxVal) * iH;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
 
