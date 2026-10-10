@@ -1,5 +1,7 @@
 # CityMind
 
+> Rust rewrite in progress on `rust-bevy-port`: see [RUST.md](RUST.md) for the headless simulator and Bevy game. This TypeScript version remains as the behavior reference during the port.
+
 A browser-based, headless agent-based economic policy simulator. No game canvas — just a policy console and a real-time macroeconomic dashboard.
 
 **Research question:** Does UBI unlock economic growth and innovation, or does it primarily redistribute without expanding total output in a closed economy?

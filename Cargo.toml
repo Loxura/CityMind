@@ -1,0 +1,9 @@
+[workspace]
+members = ["crates/citymind-core", "crates/citymind-cli", "crates/citymind-bevy"]
+default-members = ["crates/citymind-core", "crates/citymind-cli"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+
