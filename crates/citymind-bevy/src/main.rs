@@ -169,7 +169,7 @@ fn update_view(
     if let Ok(mut text) = hud.single_mut() {
         let s = game.sim.stats();
         **text = format!(
-            "CITYMIND | tick {} | residents {} | Gini {:.3} | GDP {:.1}\nTax {:.0}% | {:?} | {}\nSpace pause  N step  R reset  S save  L load  0 baseline  1 UBI  2 public goods  3 welfare  4 infrastructure",
+            "CITYMIND | tick {} | residents {} | Net-worth Gini {:.3} | GDP {:.1}\nTax {:.0}% | {:?} | {}\nSpace pause  N step  R reset  S save  L load  0 baseline  1 UBI  2 public goods  3 welfare  4 infrastructure",
             s.tick,
             s.population,
             s.gini,

@@ -3,6 +3,16 @@ use serde::{Deserialize, Serialize};
 pub const MAP_WIDTH: usize = 50;
 pub const MAP_HEIGHT: usize = 50;
 pub const WEIGHT_COUNT: usize = 824;
+pub const HOUSE_ASSET_VALUE: f32 = 20.0;
+
+#[derive(Clone, Copy, Debug)]
+pub struct WealthValuation {
+    // Whether currency was bootstrapped, even if monetary transactions are paused.
+    pub is_currency_active: bool,
+    pub food_barter_price: f32,
+    pub food_money_price: f32,
+    pub wood_money_price: f32,
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -43,7 +53,7 @@ pub struct Policy {
     pub is_currency_active: bool,
     pub central_bank_rate: f32,
     pub money_supply_growth: f32,
-    pub reserve_requirement: f32,
+    pub reserve_requirement: f32, // Legacy key: minimum bank capital ratio.
     pub capital_gains_tax: f32,
     pub margin_lending_limit: f32,
 }
@@ -117,8 +127,31 @@ impl Agent {
             weights: vec![0.0; WEIGHT_COUNT],
         }
     }
-    pub fn update_wealth(&mut self) {
-        self.wealth = self.food + self.wood + self.cash + self.houses * 20.0;
+    pub fn net_worth(&self, valuation: WealthValuation) -> f32 {
+        let valid_price = |price: f32| price.is_finite() && price >= 0.0;
+        assert!(
+            if valuation.is_currency_active {
+                valid_price(valuation.food_money_price) && valid_price(valuation.wood_money_price)
+            } else {
+                valid_price(valuation.food_barter_price)
+            },
+            "invalid net-worth valuation price"
+        );
+        let value = if valuation.is_currency_active {
+            self.cash
+                + self.food * valuation.food_money_price
+                + self.wood * valuation.wood_money_price
+                + self.houses * HOUSE_ASSET_VALUE
+                - self.debt
+        } else {
+            self.food * valuation.food_barter_price + self.wood + self.houses * HOUSE_ASSET_VALUE
+        };
+        assert!(value.is_finite(), "non-finite net worth");
+        value.max(0.0)
+    }
+
+    pub fn update_wealth(&mut self, valuation: WealthValuation) {
+        self.wealth = self.net_worth(valuation);
     }
 }
 
@@ -132,20 +165,20 @@ pub struct Tile {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Bank {
-    pub deposits: f32,
+    pub retained_interest_income: f32,
     pub loans_outstanding: f32,
     pub capital_buffer: f32,
-    pub non_performing_loans: f32,
+    pub cumulative_write_offs: f32,
     pub is_solvent: bool,
 }
 
 impl Default for Bank {
     fn default() -> Self {
         Self {
-            deposits: 0.0,
+            retained_interest_income: 0.0,
             loans_outstanding: 0.0,
             capital_buffer: 2000.0,
-            non_performing_loans: 0.0,
+            cumulative_write_offs: 0.0,
             is_solvent: true,
         }
     }
@@ -160,6 +193,7 @@ pub struct PolicyEvent {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Scenario {
+    pub measurement_version: u32,
     pub name: String,
     pub seed: u32,
     pub seed_mode: SeedMode,
@@ -176,7 +210,7 @@ pub struct Stats {
     pub avg_wood: f32,
     pub avg_houses: f32,
     pub avg_cash: f32,
-    pub gini: f32,
+    pub gini: f32, // Gini of measured household net worth, floored at zero.
     pub wealth_by_bracket: [f32; 10],
     pub wealth_boundaries: [f32; 9],
     pub food_price: f32,
@@ -189,7 +223,7 @@ pub struct Stats {
     pub avg_income: f32,
     pub inflation_rate: f32,
     pub credit_to_gdp: f32,
-    pub bank_solvency: f32,
+    pub bank_solvency: f32, // Legacy key: capped bank capital ratio.
     pub bank_loans_outstanding: f32,
     pub bank_capital_buffer: f32,
     pub role_counts: [usize; 6],

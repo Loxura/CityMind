@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let elapsed = start.elapsed();
     let stats = sim.stats();
     println!(
-        "tick={} population={} gini={:.3} gdp={:.2} food_price={:.2} trades={}",
+        "tick={} population={} net_worth_gini={:.3} gdp={:.2} food_price={:.2} trades={}",
         stats.tick, stats.population, stats.gini, stats.gdp, stats.food_price, stats.trade_count
     );
     println!(

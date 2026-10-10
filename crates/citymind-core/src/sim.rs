@@ -3,8 +3,8 @@ use std::{error::Error, fs, path::Path};
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
-    Agent, Bank, LandPolicy, MAP_HEIGHT, MAP_WIDTH, Policy, PolicyEvent, Redistribution, Scenario,
-    SeedMode, Stats, Tile,
+    Agent, Bank, HOUSE_ASSET_VALUE, LandPolicy, MAP_HEIGHT, MAP_WIDTH, Policy, PolicyEvent,
+    Redistribution, Scenario, SeedMode, Stats, Tile, WealthValuation,
 };
 use crate::neural::{self, Decision};
 use crate::rng::Rng;
@@ -14,6 +14,10 @@ const WOOD_BUFFER: f32 = 2.0;
 const HOUSE_RENT: f32 = 1.0;
 const LAND_RENT: f32 = 0.5;
 const PRICE_HISTORY: usize = 100;
+const MEASUREMENT_VERSION: u32 = 1;
+const PRINCIPAL_AMORTIZATION_RATE: f32 = 0.02;
+const MIN_PRINCIPAL_INSTALLMENT: f32 = 0.001;
+const INTEREST_RATE_SPREAD: f32 = 0.02;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct PriceRing {
@@ -64,6 +68,7 @@ struct Economy {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Simulation {
+    measurement_version: u32,
     pub seed: u32,
     pub seed_mode: SeedMode,
     pub initial_population: usize,
@@ -152,7 +157,8 @@ impl Simulation {
             neural::init_weights(&mut agent, &mut rng);
             agents.push(agent);
         }
-        Self {
+        let mut sim = Self {
+            measurement_version: MEASUREMENT_VERSION,
             seed,
             seed_mode,
             initial_population: count,
@@ -167,11 +173,15 @@ impl Simulation {
             history: Vec::new(),
             rng,
             economy: Economy::default(),
-        }
+        };
+        sim.refresh_wealth(None);
+        sim.check_solvency();
+        sim
     }
 
     pub fn set_policy(&mut self, policy: Policy, label: impl Into<String>) {
         self.policy = policy;
+        self.check_solvency();
         self.policy_events.push(PolicyEvent {
             tick: self.tick,
             label: label.into(),
@@ -181,6 +191,7 @@ impl Simulation {
 
     pub fn scenario(&self, name: impl Into<String>) -> Scenario {
         Scenario {
+            measurement_version: MEASUREMENT_VERSION,
             name: name.into(),
             seed: self.seed,
             seed_mode: self.seed_mode,
@@ -196,7 +207,18 @@ impl Simulation {
     }
 
     pub fn load_state(path: impl AsRef<Path>) -> Result<Self, Box<dyn Error>> {
-        let sim: Self = serde_json::from_slice(&fs::read(path)?)?;
+        let value: serde_json::Value = serde_json::from_slice(&fs::read(path)?)?;
+        if value
+            .get("measurement_version")
+            .and_then(serde_json::Value::as_u64)
+            != Some(MEASUREMENT_VERSION as u64)
+        {
+            return Err(
+                "unsupported measurement version; start a fresh run with corrected accounting"
+                    .into(),
+            );
+        }
+        let mut sim: Self = serde_json::from_value(value)?;
         if sim.tiles.len() != MAP_WIDTH * MAP_HEIGHT
             || sim.initial_population == 0
             || sim.max_population == 0
@@ -205,6 +227,8 @@ impl Simulation {
         {
             return Err("invalid simulation state dimensions".into());
         }
+        sim.refresh_wealth(None);
+        sim.check_solvency();
         Ok(sim)
     }
 
@@ -218,6 +242,7 @@ impl Simulation {
         if self.policy.is_currency_active && !self.economy.currency_bootstrapped {
             self.activate_currency();
         }
+        self.refresh_wealth(None);
         self.economy.tick_trade_count = 0;
         self.economy.total_wages = 0.0;
         self.economy.food_harvested = 0.0;
@@ -256,14 +281,11 @@ impl Simulation {
                 self.construct(i);
             }
             self.decay_houses(i);
-            if self.policy.is_currency_active {
-                self.decay_food(i);
-            }
-            let agent = &mut self.agents[i];
-            if agent.energy <= 0.0 && agent.food <= 0.0 {
+            self.decay_food(i);
+            if self.agents[i].energy <= 0.0 && self.agents[i].food <= 0.0 {
+                self.close_deceased_debt(i);
                 alive[i] = false;
             }
-            agent.update_wealth();
         }
         let grid = self.build_grid(Some(&alive));
         let live_order: Vec<usize> = order.into_iter().filter(|&i| alive[i]).collect();
@@ -279,7 +301,9 @@ impl Simulation {
                 self.agents[i].energy -= 0.5;
             }
         }
-        self.redistribute();
+        self.refresh_wealth(Some(&live_order));
+        self.redistribute(&live_order);
+        self.refresh_wealth(Some(&live_order));
         self.lending(&live_order, &decisions);
         self.reproduce(&live_order);
         self.agents = self
@@ -294,9 +318,10 @@ impl Simulation {
                 }
             })
             .collect();
+        self.refresh_wealth(None);
         for tile in &mut self.tiles {
             tile.food = (tile.food + 0.1).min(tile.food_max);
-            tile.wood = (tile.wood + 0.3).min(tile.wood_max);
+            tile.wood = (tile.wood + 1.0).min(tile.wood_max);
         }
         self.tick += 1;
         if self.tick % 100 == 0 {
@@ -306,6 +331,28 @@ impl Simulation {
             let stats = self.stats();
             self.economy.previous_food_price = stats.food_price;
             self.history.push(stats);
+        }
+    }
+
+    fn valuation(&self) -> WealthValuation {
+        WealthValuation {
+            is_currency_active: self.economy.currency_bootstrapped,
+            food_barter_price: self.economy.food_prices.price,
+            food_money_price: self.economy.food_money_price,
+            wood_money_price: self.economy.wood_money_price,
+        }
+    }
+
+    fn refresh_wealth(&mut self, order: Option<&[usize]>) {
+        let valuation = self.valuation();
+        if let Some(order) = order {
+            for &i in order {
+                self.agents[i].update_wealth(valuation);
+            }
+        } else {
+            for agent in &mut self.agents {
+                agent.update_wealth(valuation);
+            }
         }
     }
 
@@ -433,10 +480,10 @@ impl Simulation {
     }
 
     fn labour_market(&mut self, grid: &[Vec<usize>], order: &[usize], decisions: &[Decision]) {
-        self.economy.labour_seekers = decisions.iter().filter(|d| d.action == 2).count();
-        for agent in &mut self.agents {
-            agent.labour_sold = 0.0;
-            agent.labour_hired = 0.0;
+        self.economy.labour_seekers = order.iter().filter(|&&i| decisions[i].action == 2).count();
+        for &i in order {
+            self.agents[i].labour_sold = 0.0;
+            self.agents[i].labour_hired = 0.0;
         }
         for &employer in order {
             if decisions[employer].action != 3 || self.agents[employer].land <= 0.0 {
@@ -444,10 +491,20 @@ impl Simulation {
             }
             let neighbours =
                 self.neighbours(grid, self.agents[employer].x, self.agents[employer].y);
-            let wage = (self.economy.food_prices.price
-                * 0.6
-                * self.agents[employer].land.max(1.0).powf(0.4))
-            .max(self.policy.min_wage);
+            let food_value = if self.policy.is_currency_active {
+                self.economy.food_money_price
+            } else {
+                self.economy.food_prices.price
+            };
+            let wage = food_value * 0.6 * self.agents[employer].land.max(1.0).powf(0.4);
+            let available = if self.policy.is_currency_active {
+                self.agents[employer].cash
+            } else {
+                (self.agents[employer].wood - WOOD_BUFFER).max(0.0)
+            };
+            if wage < self.policy.min_wage || available < wage {
+                continue;
+            }
             for worker in neighbours {
                 if worker == employer
                     || decisions[worker].action != 2
@@ -460,17 +517,22 @@ impl Simulation {
                 let (employer_agent, worker_agent) = pair_mut(&mut self.agents, employer, worker);
                 employer_agent.labour_hired += 1.0;
                 worker_agent.labour_sold = 1.0;
-                worker_agent.cash += wage - tax;
+                if self.policy.is_currency_active {
+                    employer_agent.cash -= wage;
+                    worker_agent.cash += wage - tax;
+                } else {
+                    employer_agent.wood -= wage;
+                    worker_agent.wood += wage - tax;
+                }
                 self.economy.total_wages += wage;
                 self.economy.treasury += tax;
                 self.economy.wage_prices.push(wage);
                 break;
             }
         }
-        self.economy.unemployed = decisions
+        self.economy.unemployed = order
             .iter()
-            .enumerate()
-            .filter(|(i, d)| d.action == 2 && self.agents[*i].labour_sold == 0.0)
+            .filter(|&&i| decisions[i].action == 2 && self.agents[i].labour_sold == 0.0)
             .count();
     }
 
@@ -478,9 +540,6 @@ impl Simulation {
         for &seller in order {
             let neighbours = self.neighbours(grid, self.agents[seller].x, self.agents[seller].y);
             let offer = decisions[seller].offer_price;
-            if offer < decisions[seller].accept_threshold {
-                continue;
-            }
 
             let surplus_food = self.agents[seller].food - FOOD_BUFFER;
             if surplus_food > 2.0 {
@@ -493,7 +552,7 @@ impl Simulation {
                     let buyer = buyers[self.rng.index(buyers.len())];
                     let available = self.agents[buyer].wood - WOOD_BUFFER;
                     let units = surplus_food.min(available / offer);
-                    if units >= 0.001 {
+                    if offer >= decisions[buyer].accept_threshold && units >= 0.001 {
                         let tax = units * offer * self.policy.tax_rate;
                         let (seller_agent, buyer_agent) = pair_mut(&mut self.agents, seller, buyer);
                         seller_agent.food -= units;
@@ -519,7 +578,7 @@ impl Simulation {
                     let buyer = buyers[self.rng.index(buyers.len())];
                     let available = self.agents[buyer].food - FOOD_BUFFER;
                     let units = surplus_wood.min(available / offer);
-                    if units >= 0.001 {
+                    if offer >= decisions[buyer].accept_threshold && units >= 0.001 {
                         let tax = units * offer * self.policy.tax_rate;
                         let (seller_agent, buyer_agent) = pair_mut(&mut self.agents, seller, buyer);
                         seller_agent.wood -= units;
@@ -596,31 +655,34 @@ impl Simulation {
         }
     }
 
-    fn redistribute(&mut self) {
+    fn redistribute(&mut self, order: &[usize]) {
         let treasury = self.economy.treasury;
-        if treasury <= 0.0 || self.agents.is_empty() {
+        if treasury <= 0.0 || order.is_empty() {
             return;
         }
         match self.policy.redistribution {
             Redistribution::None => {}
             Redistribution::Ubi => {
                 let fraction = self.policy.ubi_amount.clamp(0.0, 1.0);
-                let payout = treasury * fraction / self.agents.len() as f32;
-                for agent in &mut self.agents {
-                    agent.cash += payout;
+                let payout = treasury * fraction / order.len() as f32;
+                for &i in order {
+                    self.agents[i].cash += payout;
                 }
                 self.economy.treasury *= 1.0 - fraction;
             }
             Redistribution::TargetedWelfare => {
-                let mut wealth: Vec<f32> = self.agents.iter().map(|a| a.wealth).collect();
+                let mut wealth: Vec<f32> = order.iter().map(|&i| self.agents[i].wealth).collect();
                 wealth.sort_by(f32::total_cmp);
                 let threshold = wealth[(wealth.len() / 5).min(wealth.len() - 1)];
-                let eligible = self.agents.iter().filter(|a| a.wealth <= threshold).count();
+                let eligible = order
+                    .iter()
+                    .filter(|&&i| self.agents[i].wealth <= threshold)
+                    .count();
                 if eligible > 0 {
                     let payout = treasury / eligible as f32;
-                    for agent in &mut self.agents {
-                        if agent.wealth <= threshold {
-                            agent.cash += payout;
+                    for &i in order {
+                        if self.agents[i].wealth <= threshold {
+                            self.agents[i].cash += payout;
                         }
                     }
                     self.economy.treasury = 0.0;
@@ -659,49 +721,75 @@ impl Simulation {
         }
     }
 
+    // Seized collateral replaces a loan asset. Only unrecovered principal is a loss.
+    fn handle_default(&mut self, i: usize) {
+        let agent = &mut self.agents[i];
+        let principal = agent.debt.max(0.0);
+        let mut remaining = principal;
+        for (units, price) in [
+            (&mut agent.houses, HOUSE_ASSET_VALUE),
+            (&mut agent.food, self.economy.food_money_price),
+            (&mut agent.wood, self.economy.wood_money_price),
+        ] {
+            if remaining <= 0.0 || price <= 0.0 {
+                continue;
+            }
+            let seized = units.max(0.0).min(remaining / price);
+            *units = (*units - seized).max(0.0);
+            remaining = (remaining - seized * price).max(0.0);
+        }
+        agent.debt = 0.0;
+        self.bank.loans_outstanding = (self.bank.loans_outstanding - principal).max(0.0);
+        self.bank.cumulative_write_offs += remaining;
+        self.bank.capital_buffer -= remaining;
+        self.check_solvency();
+    }
+
+    fn close_deceased_debt(&mut self, i: usize) {
+        let agent = &mut self.agents[i];
+        if agent.debt <= 0.0 {
+            return;
+        }
+        let paid = agent.cash.max(0.0).min(agent.debt);
+        agent.cash -= paid;
+        agent.debt -= paid;
+        self.bank.loans_outstanding = (self.bank.loans_outstanding - paid).max(0.0);
+        self.handle_default(i);
+    }
+
     fn lending(&mut self, order: &[usize], decisions: &[Decision]) {
         if !self.policy.is_currency_active {
             return;
         }
-        for agent in &mut self.agents {
-            if agent.debt < 0.001 {
+        for &i in order {
+            let agent = &mut self.agents[i];
+            let principal = agent.debt;
+            if principal <= 0.0 {
                 continue;
             }
-            let debt = agent.debt;
-            let payment = (debt * (self.policy.central_bank_rate + 0.02))
-                .min(debt)
-                .max(0.001);
-            agent.debt = (debt - payment).max(0.0);
-            if agent.debt < 0.01 {
-                agent.debt = 0.0;
-            }
-            self.bank.loans_outstanding -= debt - agent.debt;
-            if agent.cash < payment {
-                let remaining = agent.debt;
-                let house_value = agent.houses * 20.0;
-                agent.houses = 0.0;
-                let mut uncovered = (remaining - house_value).max(0.0);
-                if self.economy.food_prices.price > 0.0 {
-                    let seized = agent.food.min(uncovered / self.economy.food_prices.price);
-                    agent.food -= seized;
-                    uncovered -= seized * self.economy.food_prices.price;
-                }
-                agent.wood -= agent
-                    .wood
-                    .min(uncovered / self.economy.wood_prices.price.max(1.0));
-                agent.debt = 0.0;
-                agent.cash = 0.0;
-                self.bank.non_performing_loans += remaining;
-                self.bank.capital_buffer += house_value - remaining;
-                self.bank.loans_outstanding -= remaining;
-            } else {
-                agent.cash -= payment;
-                self.bank.deposits += payment * (1.0 - self.policy.tax_rate);
-                self.economy.treasury += payment * self.policy.tax_rate;
+            let interest =
+                principal * (self.policy.central_bank_rate + INTEREST_RATE_SPREAD).max(0.0);
+            let installment = (principal * PRINCIPAL_AMORTIZATION_RATE)
+                .max(MIN_PRINCIPAL_INSTALLMENT)
+                .min(principal);
+            let opening_cash = agent.cash.max(0.0);
+            let paid_interest = opening_cash.min(interest);
+            let paid_principal = (opening_cash - paid_interest).min(installment);
+            agent.cash = opening_cash - paid_interest - paid_principal;
+            agent.debt = (principal - paid_principal).max(0.0);
+            self.bank.loans_outstanding = (self.bank.loans_outstanding - paid_principal).max(0.0);
+            let tax = paid_interest * self.policy.tax_rate.clamp(0.0, 1.0);
+            let retained = paid_interest - tax;
+            self.economy.treasury += tax;
+            self.bank.retained_interest_income += retained;
+            self.bank.capital_buffer += retained;
+            self.check_solvency();
+            if opening_cash < interest + installment {
+                self.handle_default(i);
             }
         }
-        self.check_solvency();
         for &i in order {
+            self.check_solvency();
             let agent = &mut self.agents[i];
             if decisions[i].invest_signal <= 0.7
                 || agent.debt != 0.0
@@ -711,6 +799,13 @@ impl Simulation {
                 continue;
             }
             let amount = (agent.wealth * 0.1).min(10.0);
+            let projected = self.bank.loans_outstanding + amount;
+            let threshold = self.policy.reserve_requirement.max(0.0);
+            if self.bank.capital_buffer < 0.0
+                || (projected > 0.0 && self.bank.capital_buffer / projected < threshold)
+            {
+                continue;
+            }
             agent.cash += amount;
             agent.debt = amount;
             self.bank.loans_outstanding += amount;
@@ -719,9 +814,10 @@ impl Simulation {
     }
 
     fn check_solvency(&mut self) {
-        self.bank.is_solvent = self.bank.loans_outstanding <= 0.0
-            || self.bank.capital_buffer / self.bank.loans_outstanding
-                >= self.policy.reserve_requirement;
+        self.bank.is_solvent = self.bank.capital_buffer >= 0.0
+            && (self.bank.loans_outstanding <= 0.0
+                || self.bank.capital_buffer / self.bank.loans_outstanding
+                    >= self.policy.reserve_requirement.max(0.0));
     }
 
     fn reproduce(&mut self, order: &[usize]) {
@@ -862,3 +958,6 @@ fn pair_mut<T>(items: &mut [T], a: usize, b: usize) -> (&mut T, &mut T) {
         (&mut right[0], &mut left[b])
     }
 }
+
+#[cfg(test)]
+mod correctness_tests;

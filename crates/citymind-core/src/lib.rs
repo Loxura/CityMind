@@ -4,8 +4,8 @@ mod rng;
 mod sim;
 
 pub use model::{
-    Agent, Bank, LandPolicy, MAP_HEIGHT, MAP_WIDTH, Policy, PolicyEvent, Redistribution, Scenario,
-    SeedMode, Stats, Tile,
+    Agent, Bank, HOUSE_ASSET_VALUE, LandPolicy, MAP_HEIGHT, MAP_WIDTH, Policy, PolicyEvent,
+    Redistribution, Scenario, SeedMode, Stats, Tile, WealthValuation,
 };
 pub use sim::Simulation;
 
