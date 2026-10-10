@@ -6,6 +6,9 @@ const TILE_SIZE: f32 = 13.0;
 #[derive(Resource)]
 struct Game {
     sim: Simulation,
+    seed: u32,
+    initial_population: usize,
+    max_population: usize,
     paused: bool,
     timer: Timer,
 }
@@ -17,6 +20,10 @@ struct MapTile(usize);
 struct Hud;
 
 fn main() {
+    let seed = env_u32("CITYMIND_SEED", 42);
+    let initial_population = env_usize("CITYMIND_POPULATION", 500).max(1);
+    let max_population =
+        env_usize("CITYMIND_MAX_POPULATION", initial_population).max(initial_population);
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
@@ -28,7 +35,10 @@ fn main() {
         }))
         .insert_resource(ClearColor(Color::srgb(0.035, 0.055, 0.07)))
         .insert_resource(Game {
-            sim: Simulation::new(42, SeedMode::Morocco, 500, 500),
+            sim: Simulation::new(seed, SeedMode::Morocco, initial_population, max_population),
+            seed,
+            initial_population,
+            max_population,
             paused: false,
             timer: Timer::from_seconds(1.0 / 30.0, TimerMode::Repeating),
         })
@@ -75,7 +85,12 @@ fn controls(keys: Res<ButtonInput<KeyCode>>, mut game: ResMut<Game>) {
         game.paused = !game.paused;
     }
     if keys.just_pressed(KeyCode::KeyR) {
-        game.sim = Simulation::new(42, SeedMode::Morocco, 500, 500);
+        game.sim = Simulation::new(
+            game.seed,
+            SeedMode::Morocco,
+            game.initial_population,
+            game.max_population,
+        );
     }
     if keys.just_pressed(KeyCode::Digit1) {
         let mut policy = game.sim.policy.clone();
@@ -92,11 +107,43 @@ fn controls(keys: Res<ButtonInput<KeyCode>>, mut game: ResMut<Game>) {
         policy.redistribution = Redistribution::PublicGoods;
         game.sim.set_policy(policy, "12% tax and public goods");
     }
+    if keys.just_pressed(KeyCode::Digit3) {
+        let mut policy = game.sim.policy.clone();
+        policy.is_currency_active = true;
+        policy.tax_rate = 0.12;
+        policy.redistribution = Redistribution::TargetedWelfare;
+        game.sim.set_policy(policy, "12% tax and targeted welfare");
+    }
+    if keys.just_pressed(KeyCode::Digit4) {
+        let mut policy = game.sim.policy.clone();
+        policy.is_currency_active = true;
+        policy.tax_rate = 0.12;
+        policy.redistribution = Redistribution::Infrastructure;
+        game.sim.set_policy(policy, "12% tax and infrastructure");
+    }
     if keys.just_pressed(KeyCode::Digit0) {
         game.sim.set_policy(Policy::default(), "No policy");
     }
     if game.paused && keys.just_pressed(KeyCode::KeyN) {
         game.sim.step();
+    }
+    if keys.just_pressed(KeyCode::KeyS) {
+        match game.sim.save_state("citymind-save.json") {
+            Ok(()) => println!("Saved citymind-save.json at tick {}", game.sim.tick),
+            Err(error) => eprintln!("Failed to save state: {error}"),
+        }
+    }
+    if keys.just_pressed(KeyCode::KeyL) {
+        match Simulation::load_state("citymind-save.json") {
+            Ok(sim) => {
+                game.seed = sim.seed;
+                game.initial_population = sim.initial_population;
+                game.max_population = sim.max_population;
+                game.sim = sim;
+                println!("Loaded citymind-save.json at tick {}", game.sim.tick);
+            }
+            Err(error) => eprintln!("Failed to load state: {error}"),
+        }
     }
 }
 
@@ -122,7 +169,7 @@ fn update_view(
     if let Ok(mut text) = hud.single_mut() {
         let s = game.sim.stats();
         **text = format!(
-            "CITYMIND | tick {} | residents {} | Gini {:.3} | GDP {:.1}\nTax {:.0}% | {:?} | {}\nSpace pause  N step  R reset  0 baseline  1 UBI  2 public goods",
+            "CITYMIND | tick {} | residents {} | Gini {:.3} | GDP {:.1}\nTax {:.0}% | {:?} | {}\nSpace pause  N step  R reset  S save  L load  0 baseline  1 UBI  2 public goods  3 welfare  4 infrastructure",
             s.tick,
             s.population,
             s.gini,
@@ -153,4 +200,18 @@ fn draw_agents(game: Res<Game>, mut gizmos: Gizmos) {
         };
         gizmos.circle_2d(position, 2.0, color);
     }
+}
+
+fn env_u32(name: &str, default: u32) -> u32 {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(default)
+}
+
+fn env_usize(name: &str, default: usize) -> usize {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(default)
 }

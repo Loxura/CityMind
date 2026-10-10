@@ -10,6 +10,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut mode = SeedMode::Morocco;
     let mut policy_path: Option<PathBuf> = None;
     let mut output: Option<PathBuf> = None;
+    let mut load_state: Option<PathBuf> = None;
+    let mut save_state: Option<PathBuf> = None;
     let mut args = env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -22,24 +24,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--flat" => mode = SeedMode::Flat,
             "--policy" => policy_path = Some(args.next().ok_or("missing policy path")?.into()),
             "--output" => output = Some(args.next().ok_or("missing output path")?.into()),
+            "--load-state" => load_state = Some(args.next().ok_or("missing state path")?.into()),
+            "--save-state" => save_state = Some(args.next().ok_or("missing state path")?.into()),
             "--help" | "-h" => {
                 println!(
-                    "citymind-cli [--seed N] [--population N] [--max-population N] [--ticks N] [--flat] [--policy FILE.json] [--output FILE.json]"
+                    "citymind-cli [--seed N] [--population N] [--max-population N] [--ticks N] [--flat] [--policy FILE.json] [--output FILE.json] [--load-state FILE.json] [--save-state FILE.json]"
                 );
                 return Ok(());
             }
             _ => return Err(format!("unknown argument: {arg}").into()),
         }
     }
-    if population == 0 || max_population == 0 || population > max_population {
+    if load_state.is_none()
+        && (population == 0 || max_population == 0 || population > max_population)
+    {
         return Err("population must be between 1 and max-population".into());
     }
-    let policy: Policy = if let Some(path) = policy_path {
-        serde_json::from_str(&fs::read_to_string(path)?)?
+    let mut sim = if let Some(path) = load_state {
+        Simulation::load_state(path)?
     } else {
-        Policy::default()
+        Simulation::new(seed, mode, population, max_population)
     };
-    let mut sim = Simulation::with_policy(seed, mode, population, max_population, policy);
+    if let Some(path) = policy_path {
+        let policy: Policy = serde_json::from_str(&fs::read_to_string(path)?)?;
+        sim.set_policy(policy, "CLI policy file");
+    }
     let start = Instant::now();
     sim.run_ticks(ticks);
     let elapsed = start.elapsed();
@@ -56,6 +65,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(path) = output {
         let scenario = sim.scenario("CLI run");
         fs::write(path, serde_json::to_vec_pretty(&scenario)?)?;
+    }
+    if let Some(path) = save_state {
+        sim.save_state(path)?;
     }
     Ok(())
 }

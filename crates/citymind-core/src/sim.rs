@@ -1,3 +1,5 @@
+use std::{error::Error, fs, path::Path};
+
 use serde::{Deserialize, Serialize};
 
 use crate::model::{
@@ -186,6 +188,24 @@ impl Simulation {
             policy_events: self.policy_events.clone(),
             history: self.history.clone(),
         }
+    }
+
+    pub fn save_state(&self, path: impl AsRef<Path>) -> Result<(), Box<dyn Error>> {
+        fs::write(path, serde_json::to_vec(self)?)?;
+        Ok(())
+    }
+
+    pub fn load_state(path: impl AsRef<Path>) -> Result<Self, Box<dyn Error>> {
+        let sim: Self = serde_json::from_slice(&fs::read(path)?)?;
+        if sim.tiles.len() != MAP_WIDTH * MAP_HEIGHT
+            || sim.initial_population == 0
+            || sim.max_population == 0
+            || sim.initial_population > sim.max_population
+            || sim.agents.len() > sim.max_population
+        {
+            return Err("invalid simulation state dimensions".into());
+        }
+        Ok(sim)
     }
 
     pub fn run_ticks(&mut self, count: u64) {

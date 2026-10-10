@@ -26,6 +26,20 @@ mod tests {
     }
 
     #[test]
+    fn saved_state_continues_the_same_run() {
+        let mut original = Simulation::new(19, SeedMode::Flat, 24, 40);
+        original.run_ticks(105);
+        let mut restored: Simulation =
+            serde_json::from_slice(&serde_json::to_vec(&original).unwrap()).unwrap();
+        original.run_ticks(20);
+        restored.run_ticks(20);
+        assert_eq!(
+            serde_json::to_vec(&original).unwrap(),
+            serde_json::to_vec(&restored).unwrap()
+        );
+    }
+
+    #[test]
     fn population_respects_capacity_and_scenario_is_exportable() {
         let mut sim = Simulation::new(7, SeedMode::Flat, 25, 30);
         let mut policy = Policy::default();

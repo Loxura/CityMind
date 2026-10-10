@@ -19,3 +19,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo test -p citymind-core
       - run: cargo check --workspace
+      - name: Smoke test save and resume
+        run: |
+          cargo run -p citymind-cli -- --population 20 --max-population 30 --ticks 5 --save-state /tmp/citymind-state.json
+          cargo run -p citymind-cli -- --load-state /tmp/citymind-state.json --ticks 5 --output /tmp/citymind-scenario.json

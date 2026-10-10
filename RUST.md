@@ -33,16 +33,24 @@ The CLI accepts `--policy policy.json`, `--flat`, and other options shown by `--
 
 Missing policy fields use their defaults. The output contains sampled statistics and policy events and can be compared with another run using the same seed.
 
+Use `--save-state state.json` to preserve all agents and the random stream. Resume with `--load-state state.json --ticks 5000`. The `--output` file is a smaller scenario summary for comparing policies; it cannot resume a run.
+
 ## Bevy controls
 
 - Space: pause or resume
 - N: advance one tick while paused
-- R: reset to seed 42
+- R: reset to the configured seed
+- S: save the full simulation to `citymind-save.json`
+- L: load `citymind-save.json`
 - 0: baseline policy
 - 1: 12% tax and 35% UBI
 - 2: 12% tax and public goods
+- 3: 12% tax and targeted welfare
+- 4: 12% tax and infrastructure
 
 The map colors show food and wood availability. White dots are residents; orange dots are builders. The HUD shows population, Gini, GDP, policy, and tick.
+
+Set `CITYMIND_SEED`, `CITYMIND_POPULATION`, and `CITYMIND_MAX_POPULATION` before launching Bevy to try larger runs. The CPU neural inference cost rises with population; use the CLI throughput number to find a practical size before increasing the visual run.
 
 ## Port notes
 
