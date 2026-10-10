@@ -27,7 +27,7 @@ export function GiniChart({ history, events }: Props) {
 
   return (
     <div style={wrapStyle}>
-      <div style={titleStyle}>GINI — {lastGini}</div>
+      <div style={titleStyle}>NET-WORTH GINI — {lastGini}</div>
       <svg width={W} height={H} style={svgStyle}>
         <line x1={ML} y1={MT} x2={ML} y2={MT + iH} stroke="#333" />
         <line x1={ML} y1={MT + iH} x2={ML + iW} y2={MT + iH} stroke="#333" />

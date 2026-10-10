@@ -76,8 +76,11 @@ function doTick(): void {
   }
   prevCurrencyActive = policy.isCurrencyActive;
 
-  const { foodPrice, woodPrice } = getMarketStats();
-  activeCount = tick(sabView, activeCount, tiles, policy, tickNumber, foodPrice, woodPrice);
+  const { foodPrice, woodPrice, foodMoneyPrice } = getMarketStats();
+  activeCount = tick(
+    sabView, activeCount, tiles, policy, tickNumber,
+    foodPrice, woodPrice, foodMoneyPrice,
+  );
   tickNumber++;
 
   // Flush TF.js WebGL texture pool every 10 ticks.

@@ -4,6 +4,7 @@ export class SpatialGrid {
   private cells: Map<number, number[]> = new Map();
   private readonly cellSize: number;
   private readonly cols: number;
+  private readonly rows: number;
 
   constructor(
     mapWidth: number  = MAP_WIDTH,
@@ -12,7 +13,7 @@ export class SpatialGrid {
   ) {
     this.cellSize = cellSize;
     this.cols = Math.ceil(mapWidth / cellSize);
-    void mapHeight; // stored implicitly via key arithmetic
+    this.rows = Math.ceil(mapHeight / cellSize);
   }
 
   cellKey(x: number, y: number): number {
@@ -34,7 +35,11 @@ export class SpatialGrid {
     const result: number[] = [];
     for (let dy = -2; dy <= 2; dy++) {
       for (let dx = -2; dx <= 2; dx++) {
-        const key = (cx + dx) + (cy + dy) * this.cols;
+        const nx = cx + dx;
+        const ny = cy + dy;
+        if (nx < 0 || nx >= this.cols || ny < 0 || ny >= this.rows) continue;
+
+        const key = nx + ny * this.cols;
         const cell = this.cells.get(key);
         if (cell) {
           for (let i = 0; i < cell.length; i++) result.push(cell[i]);

@@ -153,7 +153,7 @@ function MiniScatter({ data, color }: ScatterProps) {
       <line x1={CML} y1={CMT + iH} x2={CML + iW} y2={CMT + iH} stroke="#333" />
       <text x={CML - 3} y={CMT + 4}  textAnchor="end"    fill="#444" fontSize={7}>{MAX_POP}</text>
       <text x={CML}      y={CH - 2}   textAnchor="middle" fill="#444" fontSize={7}>0</text>
-      <text x={CML + iW} y={CH - 2}   textAnchor="middle" fill="#444" fontSize={7}>Gini 1</text>
+      <text x={CML + iW} y={CH - 2}   textAnchor="middle" fill="#444" fontSize={7}>NW Gini 1</text>
       {data.map((d, i) => {
         const x = CML + Math.min(1, Math.max(0, d.gini)) * iW;
         const y = CMT + iH - Math.min(1, d.population / MAX_POP) * iH;
@@ -398,7 +398,7 @@ export function ScenarioComparison({ savedRunCount }: Props) {
 
               {/* ── Outcome metrics ── */}
               <SectionDivider label="OUTCOMES" />
-              <SummaryRow label="Final Gini"          a={sumA!.finalGini.toFixed(3)}                 b={sumB!.finalGini.toFixed(3)} />
+              <SummaryRow label="Final net-worth Gini" a={sumA!.finalGini.toFixed(3)}                b={sumB!.finalGini.toFixed(3)} />
               <SummaryRow label="Final Pop"           a={sumA!.finalPop.toString()}                  b={sumB!.finalPop.toString()} />
               <SummaryRow label="Avg GDP"             a={sumA!.avgGdp.toFixed(1)}                    b={sumB!.avgGdp.toFixed(1)} />
               <SummaryRow label="Final Unemployment"  a={fmtPct(sumA!.finalUnemployment)}            b={fmtPct(sumB!.finalUnemployment)} />
@@ -416,7 +416,7 @@ export function ScenarioComparison({ savedRunCount }: Props) {
           {/* Chart grid */}
           <div style={gridStyle}>
 
-            <ChartPair label="GINI">
+            <ChartPair label="NET-WORTH GINI">
               <MiniLine data={histA} accessor={d => d.gini}       maxVal={maxGini} color="#e05555" />
               <MiniLine data={histB} accessor={d => d.gini}       maxVal={maxGini} color="#e05555" />
             </ChartPair>
@@ -463,12 +463,12 @@ export function ScenarioComparison({ savedRunCount }: Props) {
                 maxVal={maxLabour} />
             </ChartPair>
 
-            <ChartPair label="WEALTH HELD BY DECILE — final (Piketty view)">
+            <ChartPair label="NET WORTH HELD BY DECILE — final">
               <MiniHistogram brackets={runA.history.at(-1)?.wealthByBracket ?? []} maxVal={maxWealthHeld} color="#7c5cfc" />
               <MiniHistogram brackets={runB.history.at(-1)?.wealthByBracket ?? []} maxVal={maxWealthHeld} color="#3cc8a0" />
             </ChartPair>
 
-            <ChartPair label="POLICY IMPACT (Gini × Pop trail)">
+            <ChartPair label="POLICY IMPACT (net-worth Gini × Pop trail)">
               <MiniScatter data={histA} color="#7c5cfc" />
               <MiniScatter data={histB} color="#3cc8a0" />
             </ChartPair>

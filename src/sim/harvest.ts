@@ -113,7 +113,8 @@ export function applyNetHarvest(
 }
 
 // ── Phase 7: progressive food decay ─────────────────────────────────────────
-// Called from tick.ts harvest loop when policy.isCurrencyActive is true.
+// Called from the tick harvest loop in every monetary regime. Food spoilage is a
+// physical process, so it is not gated on policy.isCurrencyActive.
 // Tiered by current food level so subsistence agents are never penalised.
 export function applyFoodDecay(sab: Float32Array, idx: number): void {
   const food = getField(sab, idx, AGENT_FIELDS.FOOD);

@@ -1,5 +1,5 @@
-// Credit-to-GDP ratio + bank solvency overlay. Phase 9+.
-// Left axis: creditToGdp. Right axis: bankSolvency (fixed 0–1).
+// Credit-to-GDP ratio + bank capital-ratio overlay. Phase 9+.
+// Left axis: creditToGdp. Right axis: legacy bankSolvency field (fixed 0–1).
 
 import type { SimStats } from '../../types/sim';
 import type { PolicyEvent } from '../../types/events';
@@ -40,7 +40,7 @@ export function CreditGdpChart({ history, events }: Props) {
     <div style={wrapStyle}>
       <div style={titleStyle}>
         CREDIT / GDP — {lastCredit.toFixed(2)}
-        <span style={solLabelStyle}> · SOLVENCY {lastSolvency.toFixed(2)}</span>
+        <span style={solLabelStyle}> · CAPITAL RATIO {lastSolvency.toFixed(2)}</span>
       </div>
       <svg width={W} height={H} style={svgStyle}>
         {/* axes */}

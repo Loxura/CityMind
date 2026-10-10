@@ -3,7 +3,7 @@
 // if wage >= reservation wage AND wage >= policy.minWage.
 // Tax collected on each wage payment. Runs before goods market each tick.
 
-import { AGENT_FIELDS } from '../types/constants';
+import { AGENT_FIELDS, WOOD_SURVIVAL_BUFFER } from '../types/constants';
 import { getField, setField } from './agent';
 import type { SpatialGrid } from './grid';
 import type { PolicyState } from '../types/sim';
@@ -64,32 +64,33 @@ function pushWage(wage: number): void {
 // Must be called AFTER grid is populated (post-harvest) and BEFORE runMarket.
 export function runLabourMarket(
   sab: Float32Array,
-  n: number,
+  _eligibleCount: number,
   grid: SpatialGrid,
   policy: PolicyState,
-  shuffledOrder: number[],
+  eligibleOrder: number[],
   primaryActions: Uint8Array,
   reservationWages: Float32Array,
-  lastFoodPrice: number,
+  foodValuePrice: number,
 ): number {
   _totalWagesThisTick = 0;
   _wageTxCount        = 0;
 
-  // Reset per-tick labour fields for all agents
-  for (let i = 0; i < n; i++) {
-    setField(sab, i, AGENT_FIELDS.LABOUR_SOLD,  0);
-    setField(sab, i, AGENT_FIELDS.LABOUR_HIRED, 0);
+  // Reset per-tick labour fields for eligible survivors only. Dead agents are
+  // compacted away later and must not re-enter labour accounting.
+  for (const idx of eligibleOrder) {
+    setField(sab, idx, AGENT_FIELDS.LABOUR_SOLD,  0);
+    setField(sab, idx, AGENT_FIELDS.LABOUR_HIRED, 0);
   }
 
   // Count labour seekers for unemployment rate
   _labourSeekerCount = 0;
-  for (let i = 0; i < n; i++) {
-    if (primaryActions[i] === SELL_LABOUR) _labourSeekerCount++;
+  for (const idx of eligibleOrder) {
+    if (primaryActions[idx] === SELL_LABOUR) _labourSeekerCount++;
   }
 
   let treasuryDelta = 0;
 
-  for (const eIdx of shuffledOrder) {
+  for (const eIdx of eligibleOrder) {
     if (primaryActions[eIdx] !== HIRE_LABOUR) continue;
     if (getField(sab, eIdx, AGENT_FIELDS.LAND) <= 0) continue;
     if (getField(sab, eIdx, AGENT_FIELDS.LABOUR_HIRED) >= MAX_WORKERS_PER_EMPLOYER) continue;
@@ -98,11 +99,22 @@ export function runLabourMarket(
     const yE = getField(sab, eIdx, AGENT_FIELDS.Y);
     const neighbours = grid.getNeighbours(xE, yE);
 
-    // MRP: marginal revenue product of labour = foodPrice * A * α * Land^γ
-    // Cobb-Douglas partial: dOutput/dL ≈ A * α * Land^γ  (at L≈1)
+    // MRP: marginal revenue product of labour = foodValuePrice * A * α * Land^γ.
+    // foodValuePrice is wood/food in barter and cash/food once currency is active.
+    // The minimum wage is an eligibility floor, not permission to bid above MRP.
     const land = Math.max(1, getField(sab, eIdx, AGENT_FIELDS.LAND));
-    const mrp  = lastFoodPrice * 1.0 * 0.6 * Math.pow(land, 0.4);
-    const wageOffer = Math.max(mrp, policy.minWage);
+    const wageOffer = foodValuePrice * 1.0 * 0.6 * Math.pow(land, 0.4);
+    if (wageOffer < policy.minWage) continue;
+
+    // Currency-off wages settle in wood; currency-on wages settle in cash.
+    // Employers must fund the full gross wage. Barter employers retain the wood
+    // survival buffer, matching the goods market's protected inventory floor.
+    const settlementField = policy.isCurrencyActive ? AGENT_FIELDS.CASH : AGENT_FIELDS.WOOD;
+    const settlementBalance = getField(sab, eIdx, settlementField);
+    const availableFunds = policy.isCurrencyActive
+      ? settlementBalance
+      : Math.max(0, settlementBalance - WOOD_SURVIVAL_BUFFER);
+    if (availableFunds < wageOffer) continue;
 
     for (const wIdx of neighbours) {
       if (wIdx === eIdx) continue;
@@ -111,12 +123,14 @@ export function runLabourMarket(
 
       const reservation = reservationWages[wIdx];
       if (wageOffer < reservation) continue;
-      if (wageOffer < policy.minWage) continue;
 
       const tax = wageOffer * policy.taxRate;
+      const netWage = wageOffer - tax;
+
+      setField(sab, eIdx, settlementField, settlementBalance - wageOffer);
+      setField(sab, wIdx, settlementField,
+        getField(sab, wIdx, settlementField) + netWage);
       setField(sab, wIdx, AGENT_FIELDS.LABOUR_SOLD, 1);
-      setField(sab, wIdx, AGENT_FIELDS.CASH,
-        getField(sab, wIdx, AGENT_FIELDS.CASH) + wageOffer * (1 - policy.taxRate));
       setField(sab, eIdx, AGENT_FIELDS.LABOUR_HIRED,
         getField(sab, eIdx, AGENT_FIELDS.LABOUR_HIRED) + 1);
 
@@ -130,8 +144,8 @@ export function runLabourMarket(
 
   // Count unemployed: labour seekers who didn't get hired
   _unemployedCount = 0;
-  for (let i = 0; i < n; i++) {
-    if (primaryActions[i] === SELL_LABOUR && getField(sab, i, AGENT_FIELDS.LABOUR_SOLD) === 0) {
+  for (const idx of eligibleOrder) {
+    if (primaryActions[idx] === SELL_LABOUR && getField(sab, idx, AGENT_FIELDS.LABOUR_SOLD) === 0) {
       _unemployedCount++;
     }
   }

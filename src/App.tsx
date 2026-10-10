@@ -100,9 +100,9 @@ export default function App() {
           onEvent={handleEvent}
           onPolicyChange={handlePolicyChange}
           bankDisplay={stats ? {
-            isSolvent:        stats.bankSolvency >= currentPolicy.reserveRequirement,
-            loansOutstanding: stats.bankLoansOutstanding,
-            capitalBuffer:    stats.bankCapitalBuffer,
+            meetsCapitalRequirement: stats.bankSolvency >= currentPolicy.reserveRequirement,
+            loansOutstanding:        stats.bankLoansOutstanding,
+            capitalBuffer:           stats.bankCapitalBuffer,
           } : null}
         />
 
@@ -151,7 +151,7 @@ export default function App() {
                 <Row label="Avg Food"      value={stats.avgFood.toFixed(1)} />
                 <Row label="Avg Wood"      value={stats.avgWood.toFixed(1)} />
                 <Row label="Avg Houses"    value={stats.avgHouses.toFixed(2)} />
-                <Row label="Gini"          value={stats.gini.toFixed(4)} />
+                <Row label="Net-worth Gini" value={stats.gini.toFixed(4)} />
                 <Row label="GDP"           value={stats.gdp.toFixed(1)} />
                 <Row label="Food Price"    value={stats.foodPrice.toFixed(3)} />
                 <Row label="Wood Price"    value={stats.woodPrice.toFixed(3)} />
@@ -162,7 +162,7 @@ export default function App() {
                 <Row label="Rent Index"    value={stats.landRentIndex.toFixed(3)} />
                 <Row label="Inflation"     value={(stats.inflationRate * 100).toFixed(2) + '%'} />
                 <Row label="Credit/GDP"    value={stats.creditToGdp.toFixed(3)} />
-                <Row label="Bank solvency" value={stats.bankSolvency.toFixed(3)} />
+                <Row label="Bank capital ratio" value={stats.bankSolvency.toFixed(3)} />
                 <Row label="Loans out"     value={stats.bankLoansOutstanding.toFixed(1)} />
                 <Row label="Bank capital"  value={stats.bankCapitalBuffer.toFixed(1)} />
                 <Row label="Avg income"    value={stats.avgIncome.toFixed(2)} />
