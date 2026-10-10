@@ -1,6 +1,6 @@
 // Wealth histogram — two views toggled by the user:
 //   "Agents"     — agent count per decile bin (default)
-//   "Wealth held" — total wealth held per decile bin (Piketty view)
+//   "Net worth held" — measured net worth held per decile bin
 // Toggle state is local; no prop needed.
 
 import { useState } from 'react';
@@ -28,7 +28,7 @@ export function WealthHistogram({ stats }: Props) {
   return (
     <div style={wrapStyle}>
       <div style={headerStyle}>
-        <span style={titleStyle}>WEALTH DISTRIBUTION</span>
+        <span style={titleStyle}>MEASURED NET WORTH</span>
         <span style={toggleStyle}>
           <button
             onClick={() => setView('agents')}
@@ -40,7 +40,7 @@ export function WealthHistogram({ stats }: Props) {
             onClick={() => setView('wealth')}
             style={view === 'wealth' ? activeBtn : inactiveBtn}
           >
-            Wealth held
+            Net worth held
           </button>
         </span>
       </div>

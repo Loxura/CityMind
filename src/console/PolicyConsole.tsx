@@ -59,16 +59,16 @@ function makeLabel(key: keyof PolicyState, oldPolicy: PolicyState, newVal: unkno
     case 'centralBankRate':
       return `Rate ${((newVal as number) * 100).toFixed(1)}%`;
     case 'reserveRequirement':
-      return `Reserve ${((newVal as number) * 100).toFixed(0)}%`;
+      return `Capital req. ${((newVal as number) * 100).toFixed(0)}%`;
     default:
       return String(key);
   }
 }
 
 interface BankDisplay {
-  isSolvent:        boolean;
-  loansOutstanding: number;
-  capitalBuffer:    number;
+  meetsCapitalRequirement: boolean;
+  loansOutstanding:        number;
+  capitalBuffer:           number;
 }
 
 interface Props {

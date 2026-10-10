@@ -113,16 +113,16 @@ export function applyConstruction(sab: Float32Array, idx: number): void {
 // Returns treasury delta (sum of all taxed rent portions).
 export function runHousingRent(
   sab: Float32Array,
-  n: number,
+  _eligibleCount: number,
   grid: SpatialGrid,
   policy: PolicyState,
-  shuffledOrder: number[],
+  eligibleOrder: number[],
   sheltered: Uint8Array,
 ): number {
   let treasuryDelta = 0;
 
   // ── Pass 1: house rent ────────────────────────────────────────────────────
-  for (const lIdx of shuffledOrder) {
+  for (const lIdx of eligibleOrder) {
     const houses = getField(sab, lIdx, AGENT_FIELDS.HOUSES);
     if (houses < 2) continue; // needs at least 2 to have 1 surplus slot
 
@@ -161,7 +161,7 @@ export function runHousingRent(
   // ── Pass 2: land rent (auctioned policy only) ─────────────────────────────
   if (policy.landPolicy !== 'auctioned') return treasuryDelta;
 
-  for (const oIdx of shuffledOrder) {
+  for (const oIdx of eligibleOrder) {
     const land = getField(sab, oIdx, AGENT_FIELDS.LAND);
     if (land < 2) continue; // needs surplus land to rent out
 
@@ -197,6 +197,5 @@ export function runHousingRent(
     }
   }
 
-  void n; // n not used directly — iteration is over shuffledOrder
   return treasuryDelta;
 }

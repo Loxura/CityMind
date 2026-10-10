@@ -7,12 +7,16 @@ import { getField, setField } from './agent';
 import type { TileMap } from './map';
 import type { PolicyState } from '../types/sim';
 
-// Return the wealth value at a given fractional percentile (0-1) across all agents.
-function wealthPercentile(sab: Float32Array, n: number, fraction: number): number {
-  const w: number[] = [];
-  for (let i = 0; i < n; i++) w.push(getField(sab, i, AGENT_FIELDS.WEALTH));
+// Return the wealth value at a given fractional percentile (0-1) across only
+// agents eligible for redistribution this tick.
+function wealthPercentile(
+  sab: Float32Array,
+  eligibleIndices: readonly number[],
+  fraction: number,
+): number {
+  const w = eligibleIndices.map((idx) => getField(sab, idx, AGENT_FIELDS.WEALTH));
   w.sort((a, b) => a - b);
-  return w[Math.min(Math.floor(fraction * n), n - 1)];
+  return w[Math.min(Math.floor(fraction * w.length), w.length - 1)];
 }
 
 // Apply redistribution policy to the current treasury.
@@ -21,12 +25,12 @@ export function redistribute(
   treasury: number,
   policy: PolicyState,
   sab: Float32Array,
-  n: number,
+  eligibleIndices: readonly number[],
   tiles: TileMap,
   foodPrice: number,
   woodPrice: number,
 ): number {
-  if (treasury <= 0 || n === 0) return treasury;
+  if (treasury <= 0 || eligibleIndices.length === 0) return treasury;
 
   switch (policy.redistribution) {
 
@@ -34,27 +38,27 @@ export function redistribute(
       // Split ubiAmount fraction of treasury equally among all agents as cash.
       const fraction = Math.max(0, Math.min(1, policy.ubiAmount));
       if (fraction <= 0) return treasury;
-      const payout = (treasury * fraction) / n;
-      for (let i = 0; i < n; i++) {
-        setField(sab, i, AGENT_FIELDS.CASH,
-          getField(sab, i, AGENT_FIELDS.CASH) + payout);
+      const payout = (treasury * fraction) / eligibleIndices.length;
+      for (const idx of eligibleIndices) {
+        setField(sab, idx, AGENT_FIELDS.CASH,
+          getField(sab, idx, AGENT_FIELDS.CASH) + payout);
       }
       return treasury * (1 - fraction);
     }
 
     case 'targeted_welfare': {
       // Pay entire treasury equally to the poorest 20% only.
-      const threshold = wealthPercentile(sab, n, 0.2);
+      const threshold = wealthPercentile(sab, eligibleIndices, 0.2);
       let eligible = 0;
-      for (let i = 0; i < n; i++) {
-        if (getField(sab, i, AGENT_FIELDS.WEALTH) <= threshold) eligible++;
+      for (const idx of eligibleIndices) {
+        if (getField(sab, idx, AGENT_FIELDS.WEALTH) <= threshold) eligible++;
       }
       if (eligible === 0) return treasury;
       const payout = treasury / eligible;
-      for (let i = 0; i < n; i++) {
-        if (getField(sab, i, AGENT_FIELDS.WEALTH) <= threshold) {
-          setField(sab, i, AGENT_FIELDS.CASH,
-            getField(sab, i, AGENT_FIELDS.CASH) + payout);
+      for (const idx of eligibleIndices) {
+        if (getField(sab, idx, AGENT_FIELDS.WEALTH) <= threshold) {
+          setField(sab, idx, AGENT_FIELDS.CASH,
+            getField(sab, idx, AGENT_FIELDS.CASH) + payout);
         }
       }
       return 0;

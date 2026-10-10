@@ -42,7 +42,7 @@ export function CentralBankControls({
 
       {/* Base rate slider */}
       <div style={sliderRowStyle}>
-        <span style={sliderLabelStyle}>Base rate</span>
+        <span style={sliderLabelStyle}>Rate / tick</span>
         <input
           type="range"
           min={0}

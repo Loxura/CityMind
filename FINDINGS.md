@@ -1050,3 +1050,220 @@ deterministic wealth-based probability rule (`WEALTH > 100`, 5% chance per tick)
   4. Low UBI rate (5–10%) — find positive marginal benefit threshold
 - `SHARES` field and `stockIndex` remain 0 (Phase 10)
 - `capitalGainsTax` and `marginLendingLimit` remain ignored (Phase 10)
+
+---
+
+## Correctness and verification hardening — July 2026
+
+### Verification baseline
+
+- Added a serialized Vitest 2 suite for deterministic simulation-kernel tests.
+  Serialization is required because market, labour, bank, and stats modules keep
+  mutable ring-buffer or aggregate state.
+- Added Playwright Chromium integration coverage for cross-origin isolation,
+  SharedArrayBuffer availability, Worker startup and stats emission, pause/resume,
+  and reset/reinitialisation.
+- Added `typecheck`, unit, browser-smoke, opt-in performance, and combined
+  verification scripts plus a GitHub Actions verification workflow.
+- Final automated result: TypeScript checks clean; 32/32 unit tests pass;
+  production build passes; Chromium worker smoke passes.
+
+### Spatial grid and bilateral market fixes
+
+- `SpatialGrid.getNeighbours()` now validates neighbour cell coordinates against
+  both row and column bounds before forming a flat key. This removes cross-edge
+  aliases where an out-of-range cell could resolve to a valid cell on another row.
+- Food and wood trades now compare seller A's offer with selected buyer B's neural
+  acceptance threshold. Offer/threshold comparator direction, demand formulas,
+  tax handling, buffers, and independent food/wood price rings are unchanged.
+- Regression coverage includes all four corners, both horizontal map edges, the
+  complete valid two-ring window, and buyer accept/reject ownership for both goods.
+
+### Conserved wages and survivor-only post-harvest processing
+
+- The minimum wage is now a hard eligibility floor. It no longer raises an
+  employer's bid above marginal revenue product; `minWage > MRP` correctly results
+  in no hire and higher unemployment.
+- Before currency activation, wages settle in wood while preserving the employer's
+  `WOOD_SURVIVAL_BUFFER`. With currency active, wages settle in cash using the
+  bootstrapped food money price. In both regimes, employer gross debit equals worker
+  net credit plus treasury tax; unfunded and partial hires do not execute.
+- After the harvest/death loop, the original shuffled order is filtered once into
+  `aliveOrder`. Emergency trade, labour, goods trade, housing rent, shelter drain,
+  redistribution, lending, invest-signal diagnostics, and reproduction now process
+  survivors only. Relative shuffled order is preserved and newborns remain
+  ineligible until the following tick.
+- UBI denominators and targeted-welfare percentiles now use survivors only.
+  Lending debt service and new-credit passes also exclude dead agents.
+- A borrower who dies is closed as an immediate full default using the existing
+  house/food/wood collateral cascade before removal, preventing orphaned aggregate
+  loan principal. The July banking-ledger repair below supersedes the original
+  cash-destruction and loss-accounting behavior.
+
+### Performance and calibration status
+
+- The opt-in 500-agent Chromium benchmark measured 5.3 ticks/sec over a 300-tick
+  sample in the available headless environment. This fails the 54 TPS regression
+  floor and the project's 60 TPS target. The threshold was not weakened.
+- The headless result may reflect CPU inference or browser/GPU availability, but it
+  is recorded as a real failed gate until repeated on representative WebGL hardware.
+- No production constants were retuned and no pre-fix macro results were relabelled.
+  Morocco/flat and currency/housing/UBI scenario baselines must be rerun before
+  comparing new population, Gini, GDP, price, wage, rent, or credit outcomes with
+  the Phase 4–9 results above.
+
+---
+
+## Banking ledger correctness repair — July 2026
+
+### Scientific status of earlier Phase 9 results
+
+All Phase 9 banking results above are retained for historical provenance but are
+invalid for causal or policy interpretation. The earlier implementation reduced
+principal before confirming that a borrower could pay, could destroy borrower cash
+on default or death, taxed principal repayment as if it were income, used the base
+rate to change amortisation rather than charge interest, valued cash-denominated
+collateral with barter-price inputs, and could originate a loan that pushed the bank
+below its own capital threshold. The reported crisis, role-selection, and lending
+suppression narratives must be rerun before they are described as findings.
+
+### Current simplified banking contract
+
+- `DEBT` and `loansOutstanding` are outstanding principal only.
+- Each tick charges interest equal to opening principal × (`centralBankRate` + 2%
+  spread) and schedules principal amortisation at 2% of opening principal, with a
+  0.001 minimum capped at remaining principal. These are per-simulation-tick rates;
+  they are not annualised real-world rates.
+- Available cash is applied to interest first and principal second. Only actual
+  payments affect the ledger. Any scheduled-service shortfall accelerates closure
+  of the remaining loan; unpaid interest is neither capitalised nor counted as a
+  principal writeoff.
+- Only paid interest is taxed. Retained after-tax interest increases bank capital.
+  Principal repayment reduces borrower cash, borrower debt, and aggregate bank
+  loans by the same amount and is not treated as income.
+- Loan origination creates equal borrower cash and principal. A proposed loan is
+  rejected if its post-origination capital ratio would fall below the configured
+  threshold.
+- Default and deceased-estate settlement apply cash to principal before collateral.
+  Houses use a fixed 20-cash liquidation mark until a house sale-price series exists;
+  food and wood use their currency-bootstrap cash prices. Seizure is capped at the
+  residual principal, excess collateral remains with the agent, and only unrecovered
+  principal reduces bank capital and accumulates as a writeoff.
+- The public `reserveRequirement` key is retained for saved-scenario compatibility,
+  but the mechanism is a minimum bank capital ratio, not a reserve requirement.
+  The public `bankSolvency` statistic is likewise a legacy key containing the capped
+  capital ratio. The UI now labels both mechanisms accurately.
+
+### Verification
+
+- Added nine focused bank-accounting tests covering sufficient service cash,
+  interest taxation, partial-payment default, exact and overcollateralised recovery,
+  deceased cash settlement, loan creation, stale capital-status refresh in both
+  directions, and post-loan capital-ratio preflight.
+- Added an end-to-end tick regression proving cash-denominated collateral prices are
+  used instead of deliberately different barter-price inputs.
+- TypeScript, all 42 unit tests, the production build, and the Chromium worker
+  startup/pause/resume/reset smoke test pass.
+- The required 500-agent headless performance check measured 8.5 ticks/sec over
+  300 ticks versus the 54 TPS regression floor and 60 TPS project target. This is
+  still a failed performance gate, though it is above the earlier 5.3 TPS result.
+  No threshold or simulation constant was weakened.
+
+### Remaining limitations before new banking experiments
+
+- Agent `WEALTH` is still a stale gross-asset field and does not subtract `DEBT`.
+  Lending eligibility, Gini, fitness, and saved stats therefore do not yet represent
+  end-of-tick net worth. This is the next correctness step.
+- Surplus estate cash has no inheritance or estate-transfer model and disappears
+  when a deceased slot is compacted. A closed-economy estate rule is still required.
+- The capital threshold and fixed collateral marks are simplified model mechanisms,
+  not a calibrated representation of commercial-bank regulation or liquidation.
+- No post-repair Phase 9 policy result has been generated yet.
+
+---
+
+## Net-worth measurement correction — August 2026
+
+### Authoritative measurement contract
+
+- Agent `WEALTH` is now a regime-specific net-worth measure rather than a stale
+  unpriced sum of gross inventories. With currency active, the cash numeraire is
+  `max(0, cash + food*foodMoneyPrice + wood*woodMoneyPrice +
+  houses*HOUSE_ASSET_VALUE - debt)`. Before currency is ever activated, the
+  wood/resource numeraire is `max(0, food*foodPrice + wood +
+  houses*HOUSE_ASSET_VALUE)`; cash and debt are excluded because no monetary
+  balance sheet exists and they are not comparable to that resource unit. Once
+  bootstrapped, monetary valuation persists if transactions are paused, and
+  reactivation does not grant cash again.
+- Loan origination adds equal borrower cash and principal debt, so it does not
+  create measured net wealth. Debt service, defaults, transfers, inventories, and
+  endogenous prices can still change net worth through their real ledger effects
+  or mark-to-market valuation.
+- WEALTH is synchronized at the opening regime boundary before wealth
+  ranks/inference, immediately before redistribution, after redistribution and
+  before lending, and again after lifecycle/compaction. The opening pass handles a
+  currency activation or deactivation between ticks. Targeted welfare and lending
+  therefore read current balances, while emitted stats, evolution fitness, and the
+  next tick's wealth-percentile neural input read the final end-of-tick balance
+  sheet, including newborns.
+
+### Scientific status and semantic break
+
+This is a semantic break in the central inequality and selection variable. All
+historical Gini values, wealth histograms, wealth boundaries, wealth-percentile
+inputs, and fitness results produced before this correction used stale gross assets
+and omitted debt. They are retained above for provenance but are invalid as
+net-worth evidence and must not be compared numerically with corrected runs.
+Targeted-welfare assignment and lending eligibility also depended on the old field,
+so policy and banking experiments using those channels must be rerun; downstream
+population, GDP, price, role-selection, and credit outcomes are not clean controls
+for corrected runs.
+
+Currency activation is itself a change of valuation regime. Pre-currency
+resource-numeraire series and post-bootstrap cash-numeraire series are not a
+continuous panel, so comparisons must start after the monetary regime is
+established and has been held fixed.
+
+### Verification
+
+- Added seven focused regressions for both valuation regimes, debt subtraction,
+  the zero floor, invalid prices, loan-origination neutrality, full-tick stats
+  freshness, monetary-regime persistence, and idempotent reactivation. The full
+  serialized suite passes 49/49 tests; TypeScript, the production build, and the
+  Chromium Worker startup/pause/resume/reset smoke test also pass. The full suite
+  contains 50/50 passing tests after the adjacent decay-contract regression below.
+- The required 500-agent headless benchmark measured 7.7 ticks/sec over 300 ticks,
+  failing the 54 TPS regression floor and 60 TPS project target. The preceding
+  banking build measured 8.5 ticks/sec in the same class of headless run, but the
+  difference is not enough to attribute causally to the four O(n) valuation passes.
+  The performance gate remains failed and no threshold was weakened.
+
+### Adjacent contract correction
+
+The authoritative Phase 7+ specification says progressive food decay is a physical
+process and must not be gated on currency. `tick.ts` still had that obsolete gate;
+it has now been removed and a full-tick regression proves decay runs before currency
+activation. This changes pre-currency resource and survival trajectories, providing
+another reason to rerun rather than reuse historical controls.
+
+### Known measurement limitations
+
+- Tools, clothing, fish, land, and shares are omitted because no authoritative
+  market price exists for them. Houses retain the fixed `HOUSE_ASSET_VALUE` mark;
+  the result is measured household private net worth, not total wealth.
+- The two money prices are bootstrapped from independently discovered barter
+  ratios, so their common cash scale is an administrative normalization rather
+  than an economically identified price level.
+- Endogenous current prices make WEALTH a mark-to-market measure; it is not a
+  liquidation-value or cost-basis account and may move when quantities do not.
+- Bank equity, treasury balances, and the currency issuer's liabilities are not
+  represented on agent balance sheets. In particular, currency bootstrap grants
+  cash against retained food without an offsetting issuer liability, so it raises
+  measured household wealth by construction.
+- The non-negative stored floor preserves the canonical Gini function and runtime
+  invariant, but hides the magnitude and distribution of negative net worth. The
+  simulator does not yet expose raw net worth or a separate insolvency-depth metric.
+- The estate-transfer omission, simplified bank capital rule, and fixed collateral
+  marks documented in the July banking repair remain unresolved.
+- No post-correction calibration or policy result has been generated yet. Phase 9
+  controls and UBI/tax experiments require fresh seeded runs under this definition.

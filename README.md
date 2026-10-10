@@ -4,7 +4,9 @@ A browser-based, headless agent-based economic policy simulator. No game canvas 
 
 **Research question:** Does UBI unlock economic growth and innovation, or does it primarily redistribute without expanding total output in a closed economy?
 
-CityMind produces an empirical answer. It does not assume one.
+CityMind produces computational evidence conditional on its rules, parameters,
+and initial conditions. It is an experimental laboratory, not an empirical
+forecast of a real economy.
 
 ---
 
@@ -56,7 +58,9 @@ Each agent is assigned one of six roles that determines its production function:
 | Capitalist | 4 | Reserved — Phase 10 |
 | Worker | 5 | Sells labour to employers |
 
-Role is inherited across generations. Builder proportion stabilises at roughly 20% under the Morocco seed (top-decile assignment) or 14% under the flat seed. Role monoculture — observed as 100% builders in early Phase 9 runs — was traced to a credit-seeking selection pressure, not a construction advantage. Without credit, neuroevolution maintains stable farmer/builder coexistence.
+Role is inherited across generations. Earlier Phase 9 runs appeared to connect
+credit access with role monoculture, but those runs used invalid debt accounting.
+That relationship is a hypothesis to retest, not a validated result.
 
 ---
 
@@ -72,7 +76,13 @@ Role is inherited across generations. Builder proportion stabilises at roughly 2
 
 **Land rent market** — under auctioned land policy, landowners collect rent from nearby landless agents. `landRentIndex` tracks rent collected per agent per stats interval.
 
-**Credit market** — one aggregate commercial bank issues loans to agents with sufficient wealth, subject to a reserve requirement solvency gate. Default cascade: houses seized first, then food, then wood as collateral. Bank freezes new lending when insolvent and recapitalises passively as existing loans are repaid.
+**Credit market** — one aggregate commercial bank creates equal borrower cash and
+principal, subject to a minimum capital-ratio gate. Each simulation tick charges
+the policy base rate plus a 2% spread and amortises 2% of opening principal. Only
+paid interest is taxable income; principal repayment reduces cash, borrower debt,
+and bank loan assets equally. Default applies available cash first, then seizes
+only the houses, food, and wood needed to cover residual principal. Only the
+unrecovered amount reduces bank capital.
 
 ---
 
@@ -82,13 +92,14 @@ Role is inherited across generations. Builder proportion stabilises at roughly 2
 
 **Monetary:** currency activation toggle, central bank base rate, money supply growth rate.
 
-**Banking:** reserve requirement slider, bank solvency and loan status display.
+**Banking:** minimum capital-ratio slider, capital-compliance and loan status display.
+The persisted policy key remains `reserveRequirement` for compatibility.
 
 **Land:** free / auctioned / state ownership.
 
 **Starting conditions:** Morocco urban 2022 seed (Gini ≈ 0.40) or flat equal distribution.
 
-All controls are live-adjustable mid-run. Policy changes fire a `PolicyEvent` that renders as a dashed vertical line across all dashboard charts with a human-readable label (e.g. "Tax 0%→12%", "Currency ON", "Reserve 10%").
+All controls are live-adjustable mid-run. Policy changes fire a `PolicyEvent` that renders as a dashed vertical line across all dashboard charts with a human-readable label (e.g. "Tax 0%→12%", "Currency ON", "Capital req. 10%"). Monetary rates are nominal rates per simulation tick; they are not annualised real-world rates.
 
 ---
 
@@ -108,9 +119,9 @@ Four collapsible tiers:
 
 ## Calibration
 
-Agent wealth at initialisation is drawn from **real 2022 Moroccan urban income data** (HCP Enquête Nationale, Casablanca-Settat region, 500 agents sampled across deciles, implied Gini ≈ 0.40). This is the calibration anchor: the simulation starts from a plausible real-world inequality baseline rather than a fictitious equal distribution.
+Agent wealth at initialisation is drawn from **real 2022 Moroccan urban income data** (HCP Enquête Nationale, Casablanca-Settat region, 500 agents sampled across deciles, implied Gini ≈ 0.40). This calibrates one initial distribution only; it does not validate the behavioural rules, market mechanisms, or policy responses against Morocco's economy.
 
-Both seed types (Morocco and flat) converge toward the same laissez-faire attractor at Gini ~0.93. The gap between Morocco's real-world Gini (0.40–0.43) and this attractor quantifies how much sustained policy intervention is required to hold inequality at real-world levels. That is the central calibration finding of Phase 6.
+Historical runs found both seed types approaching a high-inequality state, but those trajectories must be rerun after the correctness repairs described in `FINDINGS.md`. They are model outcomes, not estimates of the intervention required in Morocco.
 
 ---
 
@@ -160,7 +171,7 @@ Population ~120, Gini 0.931, avg food ~1134 (extreme elite hoarding), total trad
 
 **UBI with currency live (Phase 7+, 20k ticks):** 12% tax / 35% UBI redistribution achieves Gini 0.788 — the lowest observed — and sustains population at 499. Average GDP collapses to 108. The full causal chain is now live and testable: tax → treasury → UBI cash → emergency market → food → survival. Whether GDP recovers with parameter tuning is an open experimental question.
 
-**Banking crisis (Phase 9 v1):** Undercapitalised lending (capitalBuffer=500, no activation delay) caused a mass default cascade at tick ~300, bank insolvency, and population collapse from 500 to ~105 in 60 ticks — a worse outcome than no bank at all. Classic undercapitalised credit crisis emerging without scripting.
+**Historical Phase 9 banking runs — invalidated:** The following numbers are retained for provenance, but the old implementation reduced principal before confirming payment, destroyed borrower cash during default, treated the policy rate as amortisation, mixed barter and cash collateral values, and allowed capital-ratio overshoot. They are not evidence of an emergent banking crisis and must not be used for policy conclusions.
 
 | Metric | No banking (Phase 8) | With banking v1 |
 |---|---|---|
@@ -168,9 +179,9 @@ Population ~120, Gini 0.931, avg food ~1134 (extreme elite hoarding), total trad
 | Final Gini | 0.822 | 0.855 |
 | Avg GDP | 1,544 | 1,758 |
 
-**Invest-signal suppression (Phase 9 v5–v6):** A 500-tick lending delay intended to allow price stabilisation inadvertently created a selection pressure against credit-seeking behaviour during the population bottleneck — the period when survival fitness and credit-seeking fitness are most anti-correlated. By the time the bank opened, the entire surviving population had evolved invest_signal ≈ 0. Bank solvent, willing to lend, no borrowers. Architectural conclusion: neural-net-driven lending triggers cannot be reliably trained through a survival bottleneck. Phase 10 replaces the signal with a deterministic wealth-based probability rule.
+**Invest-signal suppression (Phase 9 v5–v6, provisional):** The old runs showed `invest_signal` approaching zero after a delayed lending window. Because both banking accounting and asynchronous evolution reproducibility still require corrected baselines, this remains a mechanism hypothesis rather than an architectural conclusion.
 
-**Role diversity as a credit-sensitive emergent property:** Without credit, neuroevolution maintains stable farmer/builder coexistence (~40–60%). Role monoculture (100% builders) is driven by credit access unlocking builder wealth accumulation, not by construction being intrinsically fitter. Role diversity is fragile under credit expansion.
+**Role diversity and credit (provisional):** Historical runs showed different role mixes with and without credit. The causal interpretation must be retested with corrected accounting, net-worth measurement, and deterministic evolution.
 
 ---
 

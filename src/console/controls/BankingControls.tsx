@@ -1,9 +1,9 @@
-// Phase 9 — Banking controls: reserve requirement slider + bank status display.
+// Phase 9 — Banking controls: capital requirement slider + bank status display.
 
 interface BankDisplay {
-  isSolvent:        boolean;
-  loansOutstanding: number;
-  capitalBuffer:    number;
+  meetsCapitalRequirement: boolean;
+  loansOutstanding:        number;
+  capitalBuffer:           number;
 }
 
 interface Props {
@@ -22,7 +22,7 @@ export function BankingControls({
   return (
     <div>
       <div style={sliderRowStyle}>
-        <span style={sliderLabelStyle}>Reserve req.</span>
+        <span style={sliderLabelStyle}>Capital req.</span>
         <input
           type="range"
           min={0}
@@ -38,8 +38,10 @@ export function BankingControls({
 
       {bankDisplay && (
         <div style={statusRowStyle}>
-          <span style={bankDisplay.isSolvent ? solventStyle : insolventStyle}>
-            {bankDisplay.isSolvent ? 'Solvent' : 'Insolvent — no new loans'}
+          <span style={bankDisplay.meetsCapitalRequirement ? solventStyle : insolventStyle}>
+            {bankDisplay.meetsCapitalRequirement
+              ? 'Capital compliant'
+              : 'Undercapitalized — no new loans'}
           </span>
           <span style={metaStyle}>
             {' '}| Loans: {bankDisplay.loansOutstanding.toFixed(1)}

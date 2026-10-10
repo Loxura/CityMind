@@ -9,10 +9,17 @@
 
 import { AGENT_FIELDS, HOUSE_ASSET_VALUE } from '../types/constants';
 import { getField, setField } from './agent';
-import { getBankState } from './policy';
+import { getBankState, recomputeBankSolvency } from './policy';
 import { addToTreasury } from './market';
-import type { BankState } from './policy';
 import type { PolicyState } from '../types/sim';
+
+export const PRINCIPAL_AMORTIZATION_RATE = 0.02;
+export const MIN_PRINCIPAL_INSTALLMENT = 0.001;
+export const INTEREST_RATE_SPREAD = 0.02;
+// Fixed cash liquidation mark used until a house sale-price series exists.
+export const HOUSE_COLLATERAL_CASH_VALUE = HOUSE_ASSET_VALUE;
+
+const LEDGER_EPSILON = 1e-9;
 
 // No activation delay — lending starts as soon as currency is active.
 // Early loan cap (WEALTH*0.1, max 10) limits initial credit explosion without
@@ -21,63 +28,81 @@ export function resetLendingActiveTick(): void {
   // kept for call-site compatibility; no-op now that the delay is removed
 }
 
-function checkSolvency(bank: BankState, reserveRequirement: number): void {
-  bank.isSolvent =
-    bank.loansOutstanding === 0 ||
-    bank.capitalBuffer / bank.loansOutstanding >= reserveRequirement;
-}
-
 function handleDefault(
   sab: Float32Array,
   idx: number,
-  bank: BankState,
-  outstandingDebt: number,
+  residualPrincipal: number,
   foodPrice: number,
   woodPrice: number,
   reserveRequirement: number,
 ): void {
-  // Step 1: seize house collateral — value credited to bank before loan writeoff.
-  const housesVal = getField(sab, idx, AGENT_FIELDS.HOUSES) * HOUSE_ASSET_VALUE;
-  setField(sab, idx, AGENT_FIELDS.HOUSES, 0);
-  bank.capitalBuffer += housesVal;
+  const bank = getBankState();
+  const principalToClose = Math.max(0, residualPrincipal);
+  let unrecoveredPrincipal = principalToClose;
 
-  // Steps 2–3: forfeit agent assets to cover the uncovered portion.
-  // outstandingDebt and housesVal are independent of each other in the bank ledger;
-  // uncovered is used only to determine how much food/wood to seize from the agent.
-  let uncovered = Math.max(0, outstandingDebt - housesVal);
+  // Collateral replaces the defaulted loan asset; it does not create bank income.
+  // Seize only the fractional quantity needed to cover the remaining principal.
+  const seizeCollateral = (field: number, unitValue: number): void => {
+    if (unrecoveredPrincipal <= LEDGER_EPSILON || unitValue <= 0) return;
 
-  if (uncovered > 0 && foodPrice > 0) {
-    const foodToSeize = uncovered / foodPrice;
-    const currentFood = getField(sab, idx, AGENT_FIELDS.FOOD);
-    const actualFoodSeized = Math.min(currentFood, foodToSeize);
-    setField(sab, idx, AGENT_FIELDS.FOOD, currentFood - actualFoodSeized);
-    uncovered -= actualFoodSeized * foodPrice;
-  }
+    const currentUnits = Math.max(0, getField(sab, idx, field));
+    const unitsToSeize = Math.min(currentUnits, unrecoveredPrincipal / unitValue);
+    if (unitsToSeize <= 0) return;
 
-  if (uncovered > 0) {
-    const woodPrice_ = foodPrice > 0 ? foodPrice : 1; // safe fallback
-    void woodPrice_; // woodPrice passed separately
-    const woodToSeize = uncovered / (woodPrice > 0 ? woodPrice : 1);
-    const currentWood = getField(sab, idx, AGENT_FIELDS.WOOD);
-    setField(sab, idx, AGENT_FIELDS.WOOD, Math.max(0, currentWood - woodToSeize));
-  }
+    setField(sab, idx, field, currentUnits - unitsToSeize);
+    const recovered = Math.min(unrecoveredPrincipal, unitsToSeize * unitValue);
+    unrecoveredPrincipal = Math.max(0, unrecoveredPrincipal - recovered);
+  };
 
-  // Steps 4–7: close the loan on the bank's books.
-  // capitalBuffer: +housesVal already applied above; -outstandingDebt here.
-  // Net effect: capitalBuffer += housesVal - outstandingDebt (correct loss accounting).
+  seizeCollateral(AGENT_FIELDS.HOUSES, HOUSE_COLLATERAL_CASH_VALUE);
+  seizeCollateral(AGENT_FIELDS.FOOD, foodPrice);
+  seizeCollateral(AGENT_FIELDS.WOOD, woodPrice);
+
+  const writeoff = Math.min(principalToClose, Math.max(0, unrecoveredPrincipal));
   setField(sab, idx, AGENT_FIELDS.DEBT, 0);
-  setField(sab, idx, AGENT_FIELDS.CASH, 0);
-  bank.nonPerformingLoans += outstandingDebt;
-  bank.capitalBuffer      -= outstandingDebt;
-  bank.loansOutstanding   -= outstandingDebt;
+  bank.loansOutstanding = Math.max(0, bank.loansOutstanding - principalToClose);
+  bank.cumulativeWriteOffs += writeoff;
+  bank.capitalBuffer -= writeoff;
 
-  checkSolvency(bank, reserveRequirement);
+  recomputeBankSolvency(reserveRequirement);
+}
+
+// Close a deceased borrower's full remaining principal immediately. This uses
+// the normal collateral/default cascade but deliberately performs no scheduled
+// payment, tax collection, deposit credit, or new-loan evaluation.
+export function closeDeceasedBorrowerDebt(
+  sab: Float32Array,
+  idx: number,
+  reserveRequirement: number,
+  foodPrice: number,
+  woodPrice: number,
+): void {
+  const bank = getBankState();
+  const openingPrincipal = getField(sab, idx, AGENT_FIELDS.DEBT);
+  if (openingPrincipal <= 0) return;
+
+  // A deceased borrower's cash settles principal first. Any estate cash above
+  // the debt remains on the agent record for lifecycle/estate handling.
+  const openingCash = Math.max(0, getField(sab, idx, AGENT_FIELDS.CASH));
+  const principalPaid = Math.min(openingCash, openingPrincipal);
+  const residualPrincipal = Math.max(0, openingPrincipal - principalPaid);
+
+  setField(sab, idx, AGENT_FIELDS.CASH, openingCash - principalPaid);
+  setField(sab, idx, AGENT_FIELDS.DEBT, residualPrincipal);
+  bank.loansOutstanding = Math.max(0, bank.loansOutstanding - principalPaid);
+  recomputeBankSolvency(reserveRequirement);
+
+  if (residualPrincipal > LEDGER_EPSILON) {
+    handleDefault(sab, idx, residualPrincipal, foodPrice, woodPrice, reserveRequirement);
+  } else {
+    setField(sab, idx, AGENT_FIELDS.DEBT, 0);
+  }
 }
 
 export function runLending(
   sab: Float32Array,
-  n: number,
-  order: number[],
+  _eligibleCount: number,
+  eligibleOrder: number[],
   policy: PolicyState,
   investSignals: Float32Array,
   foodPrice: number,
@@ -90,51 +115,78 @@ export function runLending(
   let treasuryDelta = 0;
 
   // ── Pass 1: debt service (all agents with outstanding loans) ─────────────────
-  for (let i = 0; i < n; i++) {
-    const debt = getField(sab, i, AGENT_FIELDS.DEBT);
-    if (debt < 0.001) continue;
+  for (const idx of eligibleOrder) {
+    const openingPrincipal = getField(sab, idx, AGENT_FIELDS.DEBT);
+    if (openingPrincipal <= 0) continue;
 
-    // Per-tick repayment: base rate + 2% spread. Floor at 0.001 so debt always clears.
-    const rate    = policy.centralBankRate + 0.02;
-    const payment = Math.max(Math.min(debt * rate, debt), 0.001);
+    const interestRate = Math.max(0, policy.centralBankRate + INTEREST_RATE_SPREAD);
+    const scheduledInterest = openingPrincipal * interestRate;
+    const scheduledPrincipal = Math.min(
+      openingPrincipal,
+      Math.max(openingPrincipal * PRINCIPAL_AMORTIZATION_RATE, MIN_PRINCIPAL_INSTALLMENT),
+    );
+    const scheduledService = scheduledInterest + scheduledPrincipal;
+    const openingCash = Math.max(0, getField(sab, idx, AGENT_FIELDS.CASH));
 
-    let newDebt = debt - payment;
-    if (newDebt < 0.01) newDebt = 0;
-    setField(sab, i, AGENT_FIELDS.DEBT, newDebt);
+    // Cash waterfall: interest first, then principal. Only actual payments move
+    // through the ledger; an unpaid scheduled amount triggers default below.
+    const paidInterest = Math.min(openingCash, scheduledInterest);
+    const cashAfterInterest = openingCash - paidInterest;
+    const paidPrincipal = Math.min(cashAfterInterest, scheduledPrincipal);
+    const totalPaid = paidInterest + paidPrincipal;
+    const residualPrincipal = Math.max(0, openingPrincipal - paidPrincipal);
 
-    // Reduce outstanding by the amount repaid this tick (debt - newDebt).
-    bank.loansOutstanding -= (debt - newDebt);
+    setField(sab, idx, AGENT_FIELDS.CASH, openingCash - totalPaid);
+    setField(sab, idx, AGENT_FIELDS.DEBT, residualPrincipal);
+    bank.loansOutstanding = Math.max(0, bank.loansOutstanding - paidPrincipal);
 
-    const newCash = getField(sab, i, AGENT_FIELDS.CASH) - payment;
+    const interestTax = paidInterest * Math.min(1, Math.max(0, policy.taxRate));
+    const retainedInterest = paidInterest - interestTax;
+    treasuryDelta += interestTax;
+    bank.retainedInterestIncome += retainedInterest;
+    bank.capitalBuffer += retainedInterest;
+    recomputeBankSolvency(policy.reserveRequirement);
 
-    if (newCash < 0) {
-      // Default: agent cannot service debt. Run collateral cascade.
-      // outstandingDebt = newDebt (remaining principal after this tick's reduction).
-      handleDefault(sab, i, bank, newDebt, foodPrice, woodPrice, policy.reserveRequirement);
-      // CASH already zeroed inside handleDefault.
-    } else {
-      setField(sab, i, AGENT_FIELDS.CASH, newCash);
-      treasuryDelta           += payment * policy.taxRate;
-      bank.deposits           += payment * (1 - policy.taxRate);
+    if (openingCash + LEDGER_EPSILON < scheduledService) {
+      handleDefault(
+        sab,
+        idx,
+        residualPrincipal,
+        foodPrice,
+        woodPrice,
+        policy.reserveRequirement,
+      );
+    } else if (residualPrincipal <= LEDGER_EPSILON) {
+      setField(sab, idx, AGENT_FIELDS.DEBT, 0);
     }
   }
 
   if (treasuryDelta > 0) addToTreasury(treasuryDelta);
 
   // ── Pass 2: new lending (eligible agents in shuffled order) ──────────────────
-  for (const idx of order) {
+  for (const idx of eligibleOrder) {
+    // The ratio can change through debt service, defaults, retained interest, or
+    // policy updates; refresh it immediately before every credit decision.
+    recomputeBankSolvency(policy.reserveRequirement);
     if (investSignals[idx] <= 0.7)                      continue; // net not signalling
     if (getField(sab, idx, AGENT_FIELDS.DEBT) !== 0)    continue; // one loan at a time
     if (getField(sab, idx, AGENT_FIELDS.WEALTH) <= 10)   continue; // Fix D: exclude bottom-decile subsistence agents
     if (!bank.isSolvent)                                 continue; // bank frozen
 
     const loanAmount = Math.min(getField(sab, idx, AGENT_FIELDS.WEALTH) * 0.1, 10);
+    const threshold = Math.max(0, policy.reserveRequirement);
+    const projectedLoans = bank.loansOutstanding + loanAmount;
+    const meetsProjectedRequirement =
+      bank.capitalBuffer >= 0 &&
+      (projectedLoans === 0 || threshold === 0 || bank.capitalBuffer / projectedLoans >= threshold);
+    if (!meetsProjectedRequirement) continue;
+
     setField(sab, idx, AGENT_FIELDS.CASH, getField(sab, idx, AGENT_FIELDS.CASH) + loanAmount);
     setField(sab, idx, AGENT_FIELDS.DEBT, loanAmount);
     bank.loansOutstanding += loanAmount;
 
     // Re-check solvency after each issuance — bank may hit limit mid-pass.
-    checkSolvency(bank, policy.reserveRequirement);
+    recomputeBankSolvency(policy.reserveRequirement);
   }
 }
 

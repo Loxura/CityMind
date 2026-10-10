@@ -16,16 +16,60 @@ export function ageAgent(sab: Float32Array, idx: number): void {
   setField(sab, idx, AGENT_FIELDS.AGE, age + 1);
 }
 
-// Update the WEALTH field: food + wood + cash + houses×HOUSE_ASSET_VALUE.
-// Called after harvest each tick so non-trading agents have meaningful wealth for Gini.
-// Market trades add on top of this via direct setField in market.ts.
-// Phase 8: HOUSES included at HOUSE_ASSET_VALUE per unit (houses = 0 before Phase 8).
-export function updateWealth(sab: Float32Array, idx: number): void {
+// WEALTH is a marked-to-market balance-sheet measure, not a sum of unlike units.
+// The inactive economy uses wood as its resource numeraire because foodPrice is
+// quoted in wood per food. Once currency is active, every included asset and
+// liability is valued in cash. Unpriced assets are deliberately excluded.
+export interface WealthValuation {
+  // This means the monetary valuation regime is established, which remains
+  // true if monetary transactions are later paused while balances persist.
+  isCurrencyActive: boolean;
+  foodBarterPrice: number;
+  foodMoneyPrice: number;
+  woodMoneyPrice: number;
+}
+
+export function computeNetWorth(
+  sab: Float32Array,
+  idx: number,
+  valuation: WealthValuation,
+): number {
+  const requiredPrices = valuation.isCurrencyActive
+    ? [valuation.foodMoneyPrice, valuation.woodMoneyPrice]
+    : [valuation.foodBarterPrice];
+  if (requiredPrices.some((price) => !Number.isFinite(price) || price < 0)) {
+    throw new Error(`Agent ${idx} net-worth valuation has an invalid price`);
+  }
+
   const food   = getField(sab, idx, AGENT_FIELDS.FOOD);
   const wood   = getField(sab, idx, AGENT_FIELDS.WOOD);
-  const cash   = getField(sab, idx, AGENT_FIELDS.CASH);    // 0 before Phase 7
-  const houses = getField(sab, idx, AGENT_FIELDS.HOUSES);  // 0 before Phase 8
-  setField(sab, idx, AGENT_FIELDS.WEALTH, food + wood + cash + houses * HOUSE_ASSET_VALUE);
+  const houses = getField(sab, idx, AGENT_FIELDS.HOUSES);
+
+  const rawNetWorth = valuation.isCurrencyActive
+    ? getField(sab, idx, AGENT_FIELDS.CASH)
+      + food * valuation.foodMoneyPrice
+      + wood * valuation.woodMoneyPrice
+      + houses * HOUSE_ASSET_VALUE
+      - getField(sab, idx, AGENT_FIELDS.DEBT)
+    : food * valuation.foodBarterPrice
+      + wood
+      + houses * HOUSE_ASSET_VALUE;
+
+  if (!Number.isFinite(rawNetWorth)) {
+    throw new Error(`Agent ${idx} net worth is not finite`);
+  }
+
+  // The canonical Gini implementation and WEALTH invariant require a
+  // nonnegative observation. Raw negative net worth is not currently exposed.
+  return Math.max(0, rawNetWorth);
+}
+
+export function updateWealth(
+  sab: Float32Array,
+  idx: number,
+  valuation: WealthValuation,
+): void {
+  setField(sab, idx, AGENT_FIELDS.WEALTH, computeNetWorth(sab, idx, valuation));
 }
 
 // Attempt reproduction; returns the new agent index (slotIdx) if spawned,

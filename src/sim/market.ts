@@ -62,11 +62,11 @@ function pushWoodPrice(price: number): void {
 }
 
 export function getMarketStats(): {
-  foodPrice: number; woodPrice: number; foodMoneyPrice: number;
+  foodPrice: number; woodPrice: number; foodMoneyPrice: number; woodMoneyPrice: number;
   treasury: number; tradeCount: number; tickTradeCount: number;
   emergencyTradeCount: number;
 } {
-  return { foodPrice: lastFoodPrice, woodPrice: lastWoodPrice, foodMoneyPrice, treasury, tradeCount, tickTradeCount, emergencyTradeCount };
+  return { foodPrice: lastFoodPrice, woodPrice: lastWoodPrice, foodMoneyPrice, woodMoneyPrice, treasury, tradeCount, tickTradeCount, emergencyTradeCount };
 }
 
 // Must be called on every INIT and RESET before the first tick.
@@ -129,16 +129,16 @@ export function activateCurrency(sab: Float32Array, n: number): void {
 //   Treasury receives foodMoneyPrice × taxRate.
 export function runEmergencyMarket(
   sab: Float32Array,
-  _n: number,
+  _eligibleCount: number,
   grid: SpatialGrid,
   policy: PolicyState,
-  shuffledOrder: number[],
+  eligibleOrder: number[],
   rng: () => number,
 ): void {
   if (foodMoneyPrice <= 0) return; // currency not yet bootstrapped
   emergencyTradeCount = 0; // reset each tick so diagnostic reflects this tick only
 
-  for (const aIdx of shuffledOrder) {
+  for (const aIdx of eligibleOrder) {
     const foodA = getField(sab, aIdx, AGENT_FIELDS.FOOD);
     if (foodA >= FOOD_SURVIVAL_BUFFER) continue; // not in need
 
@@ -184,17 +184,17 @@ export function runEmergencyMarket(
 // Phase 3+: netOfferPrices/netAcceptThresholds override random price selection when provided.
 export function runMarket(
   sab: Float32Array,
-  _n: number,
+  _eligibleCount: number,
   grid: SpatialGrid,
   policy: PolicyState,
-  shuffledOrder: number[],
+  eligibleOrder: number[],
   rng: () => number,
   netOfferPrices?: Float32Array,
   netAcceptThresholds?: Float32Array,
 ): void {
   tickTradeCount = 0;
 
-  for (const aIdx of shuffledOrder) {
+  for (const aIdx of eligibleOrder) {
     const xA = getField(sab, aIdx, AGENT_FIELDS.X);
     const yA = getField(sab, aIdx, AGENT_FIELDS.Y);
     const neighbours = grid.getNeighbours(xA, yA);
@@ -218,8 +218,9 @@ export function runMarket(
         const offerPrice = netOfferPrices
           ? netOfferPrices[aIdx]
           : lastFoodPrice * (0.8 + rng() * 0.4);
+        // A owns the sell offer; selected neighbour B owns the buy threshold.
         const acceptThreshold = netAcceptThresholds
-          ? netAcceptThresholds[aIdx]
+          ? netAcceptThresholds[bIdx]
           : lastFoodPrice * (0.7 + rng() * 0.6);
 
         if (offerPrice >= acceptThreshold) {
@@ -267,8 +268,9 @@ export function runMarket(
         const offerPrice = netOfferPrices
           ? netOfferPrices[aIdx]
           : lastWoodPrice * (0.8 + rng() * 0.4);
+        // A owns the sell offer; selected neighbour B owns the buy threshold.
         const acceptThreshold = netAcceptThresholds
-          ? netAcceptThresholds[aIdx]
+          ? netAcceptThresholds[bIdx]
           : lastWoodPrice * (0.7 + rng() * 0.6);
 
         if (offerPrice >= acceptThreshold) {
