@@ -1345,3 +1345,29 @@ synchronous seeded evolution retain existing differences from the browser.
   construction from timing. Both exceed the 60 TPS target. These measurements
   apply to this machine and core workload, not to Bevy rendering or browser GPU
   inference.
+
+
+---
+
+## Final Rust-port consolidation, October 9, 2026
+
+Merged the corrected browser branch at `a8952a8` into the corrected native Rust
+branch at `c4a8d19`, retaining both histories on `rust-bevy-port`. Browser workers,
+React/D3 labels, TypeScript tests, Playwright coverage, and verification CI now
+coexist with the Rust core, CLI, Bevy view, and native regression tests.
+
+Resolved README, FINDINGS, and ignore-file conflicts by retaining the native setup
+instructions, one copy of each verification record, and both Node and Cargo build
+ignores. Updated AGENTS.md to distinguish the approved native architecture from
+the browser-only worker/SAB rules. No simulation behavior changed during the merge.
+
+The implementations retain their documented calibration and execution differences,
+including Rust wood regeneration at 1.0 and browser regeneration at 0.3. This
+merge does not imply matching trajectories or validate historical policy results.
+
+Merge verification passes TypeScript typechecking, all 50 browser-kernel unit
+tests, the Vite production build, the Chromium worker startup/pause/resume/reset
+smoke test, all 28 regular Rust tests, workspace checking including Bevy, and
+Rust formatting. The existing opt-in native throughput result remains applicable
+because the merge did not modify the Rust simulation. The browser performance
+gate remains a separately documented limitation.

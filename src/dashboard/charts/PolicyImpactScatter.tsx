@@ -1,4 +1,4 @@
-// Policy impact scatter — Gini (X) × Population (Y) trail.
+// Policy impact scatter — net-worth Gini (X) × Population (Y) trail.
 // Shows where the sim has been in policy-outcome space.
 // Older points fade out. Newest point is full-opacity and larger.
 
@@ -26,13 +26,13 @@ export function PolicyImpactScatter({ history }: Props) {
 
   return (
     <div style={wrapStyle}>
-      <div style={titleStyle}>POLICY IMPACT — Gini × Pop</div>
+      <div style={titleStyle}>POLICY IMPACT — Net-worth Gini × Pop</div>
       <svg width={W} height={H} style={svgStyle}>
         <line x1={ML} y1={MT} x2={ML} y2={MT + iH} stroke="#333" />
         <line x1={ML} y1={MT + iH} x2={ML + iW} y2={MT + iH} stroke="#333" />
 
         <text x={ML} y={H - 6} textAnchor="middle" fill="#555" fontSize={8}>0</text>
-        <text x={ML + iW / 2} y={H - 6} textAnchor="middle" fill="#555" fontSize={8}>Gini 0.5</text>
+        <text x={ML + iW / 2} y={H - 6} textAnchor="middle" fill="#555" fontSize={8}>NW Gini 0.5</text>
         <text x={ML + iW} y={H - 6} textAnchor="middle" fill="#555" fontSize={8}>1</text>
 
         <text x={ML - 4} y={MT + 4} textAnchor="end" fill="#555" fontSize={8}>{maxPop}</text>

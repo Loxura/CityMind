@@ -11,10 +11,10 @@ export interface SimStats {
   avgHouses:        number;        // Phase 8+; 0 before
   // Phase 2+ fields — stub zero in Phase 1
   gdp:              number;
-  gini:             number;
+  gini:             number;     // Gini of floored measured household net worth
   wealthBrackets:   number[];   // agent count per percentile bin (always ~n/10 each)
-  wealthByBracket:  number[];   // total wealth held per percentile bin (Piketty view)
-  wealthBoundaries: number[];   // 9 wealth values at P10, P20, …, P90 (bin thresholds)
+  wealthByBracket:  number[];   // measured net worth held per percentile bin
+  wealthBoundaries: number[];   // 9 net-worth values at P10, P20, …, P90
   foodPrice:        number;
   woodPrice:        number;
   wageRate:         number;
@@ -25,9 +25,9 @@ export interface SimStats {
   inflationRate:    number;
   avgCash:          number;        // Phase 7+; 0 before
   creditToGdp:          number;
-  bankSolvency:         number;        // capitalBuffer / max(loansOutstanding, 1), capped at 1.0
+  bankSolvency:         number;        // legacy name: bank capital ratio, capped at 1.0
   bankLoansOutstanding: number;        // Phase 9+; 0 before
-  bankCapitalBuffer:    number;        // Phase 9+; 500 at init
+  bankCapitalBuffer:    number;        // Phase 9+; 2000 at init
   roleCounts:           Record<AgentRole, number>;
   techsUnlocked:        TechId[];
   stockIndex:           number;
@@ -42,9 +42,9 @@ export interface PolicyState {
   minWage:            number;
   landPolicy:         'state' | 'auctioned' | 'free';
   isCurrencyActive:   boolean;  // Phase 7+; false before
-  centralBankRate:    number;   // Phase 7+
+  centralBankRate:    number;   // Phase 7+; nominal rate per simulation tick
   moneySupplyGrowth:  number;   // Phase 7+
-  reserveRequirement: number;   // Phase 8+
+  reserveRequirement: number;   // legacy name: bank capital-adequacy threshold (Phase 8+)
   capitalGainsTax:    number;   // Phase 9+
   marginLendingLimit: number;   // Phase 9+
 }

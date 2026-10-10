@@ -38,7 +38,7 @@ not yet reproduce the browser dashboard or scenario manager.
 | `citymind-core` | Agent state, CPU neural inference, seeded evolution, markets, redistribution, banking, statistics |
 | `citymind-cli` | Headless experiments, scenario export, save/resume, throughput measurement |
 | `citymind-bevy` | Native map view, policy presets, pause/step/reset, save/load |
-| `src/` | Historical TypeScript browser implementation |
+| `src/` | Corrected TypeScript policy console, worker simulation, and D3 dashboard |
 
 Rust uses ordinary agent structs and evaluates the 40 → 16 → 8 → 7 neural network
 on the CPU. Evolution runs synchronously every 100 ticks with the seeded random
@@ -93,13 +93,15 @@ valuation regime fixed.
 
 Earlier banking and gross-wealth results in [FINDINGS.md](FINDINGS.md) are retained
 for provenance. They must be rerun before drawing conclusions from corrected
-net-worth or policy outcomes. Full saves and scenario exports carry
+net-worth or policy outcomes. Native full saves and scenario exports carry
 `measurement_version: 1`. Old full saves are rejected because their banking
 balances and historical measurements cannot be repaired reliably.
 
-The corrected browser work is preserved on `fix/typescript-correctness`, commit
-`a8952a8`. The browser files on this Rust branch retain the older implementation;
-use that separate branch for the corrected browser console and its tests.
+The final `rust-bevy-port` branch includes both the corrected Rust implementation
+from `c4a8d19` and the corrected browser implementation from `a8952a8`. Their
+original branches remain available as development history. The implementations
+share accounting contracts but still differ in inference, evolution scheduling,
+and calibration; see [RUST.md](RUST.md).
 
 ## Verification
 
@@ -119,8 +121,14 @@ formatting, core tests, workspace checking, and a CLI save/resume smoke test.
 ```sh
 npm install
 npm run dev
-npm run build
+npm run verify
 ```
+
+`npm run verify` runs TypeScript checks, 50 simulation unit tests, the production
+build, and a Chromium worker smoke test. Install the Playwright browser with
+`npx playwright install chromium` before running the smoke test. The optional
+`npm run test:perf` measures browser tick rate; the historical headless browser
+performance gate remains failed, independently of the passing native benchmark.
 
 The browser simulation uses workers, TensorFlow.js, and SharedArrayBuffer.
 Cross-origin isolation is required; Vite supplies the development headers.

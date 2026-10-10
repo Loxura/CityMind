@@ -1,6 +1,6 @@
 # CityMind in Rust
 
-This branch ports the CityMind simulation to a headless Rust library and uses it from a small Bevy city view. The TypeScript app remains in the repository as a historical reference. Its corrected version is preserved separately on `fix/typescript-correctness`.
+This branch ports the CityMind simulation to a headless Rust library and uses it from a small Bevy city view. The corrected TypeScript policy console, worker simulation, and dashboard are included alongside Rust on the final `rust-bevy-port` branch.
 
 ## Crates
 
@@ -113,8 +113,9 @@ different units, so policy comparisons must hold the monetary regime fixed.
 ### Calibration conflicts and remaining limits
 
 Rust now regenerates wood at 1.0 per tile per tick, following the supplied
-AGENTS.md contract. Both earlier implementations used 0.3. Food regeneration
-remains 0.1. This additional calibration change requires fresh seeded experiments.
+AGENTS.md contract. The browser reference still uses 0.3. Food regeneration
+remains 0.1 in both implementations; their calibration therefore differs. This
+additional calibration change requires fresh seeded experiments.
 
 The supplied contract describes well-fed energy as increasing by 0.25 per tick,
 but its formula with the implemented 0.5 food consumption yields a decrease of

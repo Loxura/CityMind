@@ -59,7 +59,7 @@ export const INITIAL_ENERGY      = 100;
 export const FOOD_SURVIVAL_BUFFER = 10;
 export const WOOD_SURVIVAL_BUFFER = 2;  // temporarily lowered from 5 to confirm trades execute
 
-// Phase 7 — progressive food decay rates (applied per tick when currency is active)
+// Phase 7+ — progressive food decay rates (physical process; always applied per tick)
 // food > 100 : HIGH tier — ~0.8% loss/tick, stockpile erosion for wealthy agents
 // food 20–100: MID  tier — ~0.2% loss/tick, gentle pressure on comfortable agents
 // food ≤ 20  : no decay  — subsistence agents fully protected
@@ -77,8 +77,9 @@ export const HOUSE_DECAY_RATE_LOW  = 0.999;  // houses ≤ 5
 // Adds to the base -1/tick drain. Agents need either HOUSES≥1 or to pay rent.
 export const SHELTER_ENERGY_PENALTY = 0.5;
 
-// HOUSE_ASSET_VALUE: wealth contribution per house unit (for WEALTH field).
-// Chosen so 5 houses ≈ 100 wealth — comparable to food reserves.
+// HOUSE_ASSET_VALUE: fixed mark per house unit in the active wealth numeraire.
+// Chosen so 5 houses ≈ 100 wealth. This remains a calibration proxy until the
+// housing market produces an observed sale-price series.
 export const HOUSE_ASSET_VALUE = 20;
 
 // MAX_HOUSES_PER_AGENT: hard cap matching neural net normalisation max (input 5 max=20).

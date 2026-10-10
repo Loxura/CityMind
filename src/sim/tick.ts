@@ -2,7 +2,8 @@
 // Order: net inference → harvest (Cobb-Douglas + wood harvest) → construction (builders) →
 //        house decay → food decay → grid register → emergency food market →
 //        labour market → goods market → housing rent → shelter drain →
-//        redistribution → lending (Phase 9) → lifecycle → compact → tile regen.
+//        pre-policy net worth → redistribution → pre-credit net worth →
+//        lending (Phase 9) → lifecycle → compact → final net worth → tile regen.
 
 import {
   AGENT_FIELDS, AGENT_STRIDE, MAX_AGENTS, INITIAL_ENERGY,
@@ -12,6 +13,7 @@ import { getField, setField, initAgent } from './agent';
 import type { AgentSeed } from './seeds/moroccoUrbanSeed';
 import { applyNetHarvest, applyFoodDecay, resetHarvestTick } from './harvest';
 import { isDead, ageAgent, updateWealth, tryReproduce } from './lifecycle';
+import type { WealthValuation } from './lifecycle';
 import { regenerateTiles } from './map';
 import { runMarket, runEmergencyMarket, getMarketStats, addToTreasury, setTreasury } from './market';
 import { runLabourMarket } from './labour';
@@ -23,7 +25,7 @@ import {
 import { SpatialGrid } from './grid';
 import { buildInputMatrix, computeWealthRanks } from '../net/inputs';
 import { runInference, decodeMoveDir, decodePrimaryAction, decodePrice, decodeReservationWage, decodeInvestSignal } from '../net/inference';
-import { runLending } from './bank';
+import { closeDeceasedBorrowerDebt, runLending } from './bank';
 import { copyWeightsFromSAB, initWeights } from '../net/weights';
 import type { TileMap } from './map';
 import type { PolicyState } from '../types/sim';
@@ -48,6 +50,17 @@ function shuffleIndices(indices: number[]): void {
     const j = Math.floor(rng() * (i + 1));
     const tmp = indices[i]; indices[i] = indices[j]; indices[j] = tmp;
   }
+}
+
+// Currency prices and balances persist after bootstrap even if monetary trading
+// is temporarily paused. Do not switch indebted agents back to a resource-only
+// balance sheet merely because the live policy toggle is off.
+function usesCurrencyNumeraire(
+  policy: PolicyState,
+  foodMoneyPrice: number,
+  woodMoneyPrice: number,
+): boolean {
+  return policy.isCurrencyActive || (foodMoneyPrice > 0 && woodMoneyPrice > 0);
 }
 
 let _nextId = 0;
@@ -124,7 +137,26 @@ export function tick(
   tickNumber: number,
   foodPrice: number,
   woodPrice: number,
+  foodMoneyPrice: number,
 ): number {
+  // Usually this is the previous tick's final valuation. Revalue again at the
+  // boundary because activating/deactivating currency changes the numeraire
+  // before inference consumes wealth ranks.
+  const openingMarket = getMarketStats();
+  const openingWealthValuation: WealthValuation = {
+    isCurrencyActive: usesCurrencyNumeraire(
+      policy,
+      foodMoneyPrice,
+      openingMarket.woodMoneyPrice,
+    ),
+    foodBarterPrice: foodPrice,
+    foodMoneyPrice,
+    woodMoneyPrice: openingMarket.woodMoneyPrice,
+  };
+  for (let idx = 0; idx < activeCount; idx++) {
+    updateWealth(sab, idx, openingWealthValuation);
+  }
+
   const order: number[] = [];
   for (let i = 0; i < activeCount; i++) order.push(i);
   shuffleIndices(order);
@@ -184,84 +216,125 @@ export function tick(
     // Phase 8: house decay (all agents with houses)
     applyHouseDecay(sab, idx);
 
-    // Phase 7: progressive food decay (when currency is active)
-    if (policy.isCurrencyActive) {
-      applyFoodDecay(sab, idx);
-    }
+    // Phase 7+: progressive food decay is a physical process, not a monetary one.
+    applyFoodDecay(sab, idx);
 
     // Phase 8: shelter drain deferred — runHousingRent must run first to mark renters.
     // Drain applied in shelter drain loop below (after housing rent step).
 
     if (isDead(sab, idx)) {
+      const market = getMarketStats();
+      const collateralFoodPrice = policy.isCurrencyActive && market.foodMoneyPrice > 0
+        ? market.foodMoneyPrice
+        : foodPrice;
+      const collateralWoodPrice = policy.isCurrencyActive && market.woodMoneyPrice > 0
+        ? market.woodMoneyPrice
+        : woodPrice;
+      closeDeceasedBorrowerDebt(
+        sab, idx, policy.reserveRequirement, collateralFoodPrice, collateralWoodPrice,
+      );
       alive[idx] = 0;
       continue;
     }
 
-    updateWealth(sab, idx);
   }
+
+  // Keep survivors in their original shuffled relative order. Children are not
+  // appended, so every birth remains ineligible until the next tick.
+  const aliveOrder = order.filter((idx) => alive[idx] !== 0);
 
   // Grid register (post-harvest, dead excluded)
   _grid.clear();
-  for (let i = 0; i < activeCount; i++) {
-    if (alive[i]) _grid.register(i, getField(sab, i, AGENT_FIELDS.X), getField(sab, i, AGENT_FIELDS.Y));
+  for (const idx of aliveOrder) {
+    _grid.register(
+      idx,
+      getField(sab, idx, AGENT_FIELDS.X),
+      getField(sab, idx, AGENT_FIELDS.Y),
+    );
   }
 
   // ── Emergency food market (Step 3.5 — Phase 7+) ─────────────────────────────
   if (policy.isCurrencyActive) {
-    runEmergencyMarket(sab, activeCount, _grid, policy, order, rng);
+    runEmergencyMarket(sab, aliveOrder.length, _grid, policy, aliveOrder, rng);
   }
 
   // ── Labour market (Step 4) ───────────────────────────────────────────────────
+  const labourFoodValuePrice = policy.isCurrencyActive ? foodMoneyPrice : foodPrice;
   const labourTreasuryDelta = runLabourMarket(
-    sab, activeCount, _grid, policy, order,
-    primaryAction, reservationWages, foodPrice,
+    sab, aliveOrder.length, _grid, policy, aliveOrder,
+    primaryAction, reservationWages, labourFoodValuePrice,
   );
   addToTreasury(labourTreasuryDelta);
 
   // ── Goods market (Step 5) ────────────────────────────────────────────────────
-  runMarket(sab, activeCount, _grid, policy, order, rng, offerPrices, acceptThresholds);
+  runMarket(
+    sab, aliveOrder.length, _grid, policy, aliveOrder, rng,
+    offerPrices, acceptThresholds,
+  );
 
   // ── Housing rent (Step 6 — Phase 8+) ─────────────────────────────────────────
   // runHousingRent marks renters as sheltered (updates sheltered array).
   // Must run before applyShelterDrain so renters are not penalised.
   const housingTreasuryDelta = runHousingRent(
-    sab, activeCount, _grid, policy, order, sheltered,
+    sab, aliveOrder.length, _grid, policy, aliveOrder, sheltered,
   );
   addToTreasury(housingTreasuryDelta);
 
   // ── Shelter drain (after rent market has resolved shelter status) ─────────────
-  for (const idx of order) {
-    if (!alive[idx]) continue;
+  for (const idx of aliveOrder) {
     applyShelterDrain(sab, idx, sheltered);
   }
 
   // ── Redistribution (Step 8) ──────────────────────────────────────────────────
-  const { treasury, foodPrice: fp, woodPrice: wp } = getMarketStats();
-  const remaining = redistribute(treasury, policy, sab, activeCount, tiles, fp, wp);
+  const {
+    treasury,
+    foodPrice: fp,
+    woodPrice: wp,
+    foodMoneyPrice: fmp,
+    woodMoneyPrice: wmp,
+  } = getMarketStats();
+
+  const wealthValuation: WealthValuation = {
+    isCurrencyActive: usesCurrencyNumeraire(policy, fmp, wmp),
+    foodBarterPrice: fp,
+    foodMoneyPrice: fmp,
+    woodMoneyPrice: wmp,
+  };
+
+  // Targeted welfare must rank current pre-transfer balance sheets rather than
+  // the previous tick's or post-harvest-only values.
+  for (const idx of aliveOrder) updateWealth(sab, idx, wealthValuation);
+
+  const remaining = redistribute(treasury, policy, sab, aliveOrder, tiles, fp, wp);
   setTreasury(remaining);
+
+  // Credit eligibility must include this tick's transfers and market outcomes.
+  for (const idx of aliveOrder) updateWealth(sab, idx, wealthValuation);
 
   // ── Invest-signal diagnostic (ticks 500, 1000, 2000) ─────────────────────────
   if (tickNumber === 500 || tickNumber === 1000 || tickNumber === 2000) {
     let below05 = 0, between0507 = 0, above07 = 0;
-    for (let i = 0; i < activeCount; i++) {
-      const s = investSignals[i];
+    for (const idx of aliveOrder) {
+      const s = investSignals[idx];
       if (s > 0.7) above07++;
       else if (s >= 0.5) between0507++;
       else below05++;
     }
+    const aboveThresholdPct = aliveOrder.length > 0
+      ? above07 / aliveOrder.length * 100
+      : 0;
     console.log(
       `[tick ${tickNumber}] invest_signal dist: <0.5=${below05} 0.5-0.7=${between0507} >0.7=${above07}` +
-      ` (n=${activeCount}, pct_above_threshold=${(above07/activeCount*100).toFixed(1)}%)`
+      ` (n=${aliveOrder.length}, pct_above_threshold=${aboveThresholdPct.toFixed(1)}%)`
     );
   }
 
   // ── Lending (Step 8.5 — Phase 9+) ────────────────────────────────────────────
-  runLending(sab, activeCount, order, policy, investSignals, fp, wp);
+  // Debt is cash-denominated, so collateral must be valued in cash units.
+  runLending(sab, aliveOrder.length, aliveOrder, policy, investSignals, fmp, wmp);
 
   // ── Lifecycle: reproduction only (Step 9) ────────────────────────────────────
-  for (const idx of order) {
-    if (!alive[idx]) continue;
-
+  for (const idx of aliveOrder) {
     const nextIdRef = { value: _nextId };
     const totalNow  = activeCount + childCount;
     if (totalNow < MAX_AGENTS) {
@@ -299,10 +372,16 @@ export function tick(
 
   const newCount = survivors + childCount;
 
+  // Stats, wealth-rank inputs, and evolutionary fitness all consume WEALTH after
+  // tick() returns. Revalue every compacted survivor and newborn after the final
+  // cash, debt, collateral, and reproduction mutations of this tick.
+  for (let idx = 0; idx < newCount; idx++) {
+    updateWealth(sab, idx, wealthValuation);
+  }
+
   regenerateTiles(tiles);
 
   if (tickNumber % 60 === 0) assertInvariants(sab, newCount);
 
   return newCount;
 }
-

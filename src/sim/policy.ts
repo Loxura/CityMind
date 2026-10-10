@@ -3,31 +3,42 @@ import type { PolicyState } from '../types/sim';
 // Phase 9: aggregate bank state. One bank per simulation, not per-agent.
 // Lives here alongside PolicyState so worker.ts can reset both together.
 export interface BankState {
-  deposits:           number;  // cumulative repayments received as bank income
-  loansOutstanding:   number;  // total principal currently lent out
-  capitalBuffer:      number;  // bank's own equity (absorbs losses on default)
-  nonPerformingLoans: number;  // accumulated default principal this run
-  isSolvent:          boolean; // capitalBuffer/loansOutstanding >= reserveRequirement
-                               // always true when loansOutstanding === 0
+  retainedInterestIncome: number;  // cumulative after-tax interest retained this run
+  loansOutstanding:       number;  // total principal currently lent out
+  capitalBuffer:          number;  // bank equity; absorbs unrecovered principal
+  cumulativeWriteOffs:    number;  // cumulative unrecovered principal this run
+  isSolvent:              boolean; // legacy name: meets the configured capital threshold
 }
 
 let _bank: BankState = {
-  deposits:           0,
-  loansOutstanding:   0,
-  capitalBuffer:      2000,
-  nonPerformingLoans: 0,
-  isSolvent:          true,
+  retainedInterestIncome: 0,
+  loansOutstanding:       0,
+  capitalBuffer:          2000,
+  cumulativeWriteOffs:    0,
+  isSolvent:              true,
 };
 
 export function getBankState(): BankState { return _bank; }
 
+// PolicyState.reserveRequirement is retained as the public field name for
+// compatibility, but it is used as a capital-adequacy threshold: equity divided
+// by outstanding principal. A bank with negative equity remains insolvent even
+// when it has no loans on its books.
+export function recomputeBankSolvency(capitalAdequacyThreshold: number): void {
+  const threshold = Math.max(0, capitalAdequacyThreshold);
+  _bank.isSolvent =
+    _bank.capitalBuffer >= 0 &&
+    (_bank.loansOutstanding === 0 ||
+      _bank.capitalBuffer / _bank.loansOutstanding >= threshold);
+}
+
 export function resetBankState(): void {
   _bank = {
-    deposits:           0,
-    loansOutstanding:   0,
-    capitalBuffer:      2000,
-    nonPerformingLoans: 0,
-    isSolvent:          true,
+    retainedInterestIncome: 0,
+    loansOutstanding:       0,
+    capitalBuffer:          2000,
+    cumulativeWriteOffs:    0,
+    isSolvent:              true,
   };
 }
 
@@ -53,5 +64,7 @@ export function applyPolicyPatch(
   current: PolicyState,
   patch: Partial<PolicyState>,
 ): PolicyState {
-  return { ...current, ...patch };
+  const next = { ...current, ...patch };
+  recomputeBankSolvency(next.reserveRequirement);
+  return next;
 }
